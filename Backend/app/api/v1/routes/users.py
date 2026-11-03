@@ -7,7 +7,7 @@ from app.core import security
 from app.database.connection import get_db
 from app.dependencies.auth import get_current_user, require_role
 from app.models.user import User
-from app.schemas.user import StaffCreate, UserOut, UserUpdate, build_user_out
+from app.schemas.user import AccessUpdate, StaffCreate, UserOut, UserUpdate, build_user_out
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -64,3 +64,20 @@ def create_staff(payload: StaffCreate, _: User = Depends(require_role("manager")
     db.commit()
     db.refresh(staff)
     return build_user_out(staff)
+
+
+@router.patch("/{user_id}/access", response_model=UserOut)
+def set_access(user_id: int, payload: AccessUpdate,
+               manager: User = Depends(require_role("manager")),
+               db: Session = Depends(get_db)):
+    """Grant or revoke an agent's portal access (manager only)."""
+    target = db.get(User, user_id)
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if target.role != "agent":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Access can only be changed for agent accounts")
+    target.is_active = payload.is_active
+    db.commit()
+    db.refresh(target)
+    return build_user_out(target)

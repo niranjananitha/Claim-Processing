@@ -17,7 +17,7 @@ class AuthError(Exception):
 
 
 def register_client(db: Session, name: str, email: str, password: str,
-                    policy_number: str | None = None) -> User:
+                    policy_number: str | None = None, vehicle=None) -> User:
     existing = db.scalar(select(User).where(User.email == email.lower()))
     if existing:
         raise AuthError("Email already registered")
@@ -33,6 +33,9 @@ def register_client(db: Session, name: str, email: str, password: str,
     # Give the client a policy so the portal + ML ratio have something to work with.
     if policy_number:
         db.add(Policy(policy_number=policy_number, holder_id=user.id, state=""))
+    if vehicle is not None:
+        from app.services import vehicle_service
+        vehicle_service.add_vehicle(db, user, vehicle, commit=False)
     db.commit()
     db.refresh(user)
     return user

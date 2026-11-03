@@ -11,6 +11,7 @@ from app.api.v1.routes import (
     ml,
     policies,
     users,
+    vehicles,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -23,3 +24,4 @@ api_router.include_router(manager.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(documents.router)
 api_router.include_router(ml.router)
+api_router.include_router(vehicles.router)

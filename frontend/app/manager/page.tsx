@@ -5,16 +5,21 @@ import Link from "next/link";
 import Sidebar from "../components/Sidebar";
 import Header from "../components/Header";
 import { useClaims } from "../context/ClaimsContext";
+import { formatDate, formatINR } from "../lib/format";
+import { CLOSED_STATUSES, blockedReason, canTransition } from "../lib/workflow";
 
 export default function ManagerDashboardPage() {
-  const { claims, changeStatus, currentUser } = useClaims();
-  const [filterBreaches, setFilterBreaches] = useState(false);
+  const { claims, changeStatus, setSelectedClaim } = useClaims();
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Categorized Executive Metrics
   const agentVerifiedClaims = claims.filter((c) => c.status === "Agent-Verified");
   const appealsAwaitingDecision = claims.filter((c) => c.status === "Disputed" || c.status === "Revaluation");
-  const claimsUnderInvestigation = claims.filter((c) => c.status === "Action Required" || c.severity.includes("Major"));
+  const claimsUnderInvestigation = claims.filter(
+    (c) =>
+      !CLOSED_STATUSES.includes(c.status) &&
+      (c.status === "Action Required" || c.status === "Fraud Review" || c.severity.includes("Major"))
+  );
   const recentlyCompleted = claims.filter((c) => c.status === "Approved" || c.status === "Completed");
 
   // Prioritized review queue
@@ -27,11 +32,15 @@ export default function ManagerDashboardPage() {
     })),
     ...appealsAwaitingDecision.map((c) => ({
       ...c,
-      attentionReason: "Statutory Policyholder Appeal Filed — 7-Day Window Review",
+      attentionReason: "Policyholder Appeal Filed — Awaiting Review",
       stage: "Dispute Arbitration",
       actionUrl: "/manager/revaluation",
     })),
-    ...claimsUnderInvestigation.slice(0, 3).map((c) => ({
+    ...claimsUnderInvestigation
+      // Skip claims already listed above (a disputed Major claim used to appear twice).
+      .filter((c) => c.status !== "Agent-Verified" && c.status !== "Disputed" && c.status !== "Revaluation")
+      .slice(0, 3)
+      .map((c) => ({
       ...c,
       attentionReason: "High-Exposure Loss / SIU Flagged Investigation",
       stage: "Inquiry Review",
@@ -39,7 +48,7 @@ export default function ManagerDashboardPage() {
     })),
   ];
 
-  const displayedQueue = filterBreaches ? prioritizedQueue.slice(0, 2) : prioritizedQueue;
+  const displayedQueue = prioritizedQueue;
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -47,53 +56,30 @@ export default function ManagerDashboardPage() {
   };
 
   const handleQuickApprove = async (id: string, amount: number) => {
+    const claim = claims.find((c) => c.id === id);
+    if (claim && !canTransition("manager", claim.status, "Approved")) {
+      showToast(`Claim ${claim.claimRef || id}: ${blockedReason(claim.status)}`);
+      return;
+    }
     const res = await changeStatus(
       id,
       "Approved",
-      `Manager settlement authorized for $${amount.toLocaleString()}. Payment disbursement pending.`
+      `Manager settlement authorized for ${formatINR(amount)}. Payment disbursement pending.`
     );
     showToast(
       res
-        ? `Claim #${id} authorized for settlement ($${amount.toLocaleString()}).`
-        : `Claim #${id} must be Agent-Verified before approval.`
+        ? `Claim #${id} authorized for settlement (${formatINR(amount)}).`
+        : `Claim #${id} could not be approved: ${blockedReason(claim?.status || "")}`
     );
   };
 
   return (
     <div className="min-h-screen bg-[#f8f9ff] flex">
       <Sidebar />
-      <div className="flex-1 ml-72 flex flex-col min-w-0">
+      <div className="flex-1 app-main flex flex-col min-w-0">
         <Header />
 
         <main className="flex-1 p-6 max-w-7xl w-full mx-auto flex flex-col gap-6">
-          {/* Priority Statutory SLA Warning Banner */}
-          <div className="bg-white border border-[#ffdad6] rounded-xl p-4 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-3 bg-gradient-to-r from-[#ffdad6]/25 to-transparent">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-[#ffdad6] text-[#ba1a1a] flex items-center justify-center shrink-0">
-                <span className="material-symbols-outlined text-[20px]">
-                  notifications_active
-                </span>
-              </div>
-              <div>
-                <span className="text-xs font-bold text-[#ba1a1a] uppercase tracking-wider block">
-                  Priority Statutory SLA Warning
-                </span>
-                <span className="text-xs text-[#0b1c30]">
-                  2 claim files require executive sign-off within 18 statutory hours to maintain Ohio Department of Insurance compliance.
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setFilterBreaches(!filterBreaches)}
-                className="px-3.5 py-1.5 rounded-lg bg-[#ba1a1a] text-white text-xs font-bold hover:bg-[#93000a] transition-colors cursor-pointer"
-              >
-                {filterBreaches ? "Show All Items" : "Filter SLA Breaches"}
-              </button>
-            </div>
-          </div>
-
           {toastMessage && (
             <div className="p-3 bg-[#ecfdf5] border border-[#a7f3d0] rounded-xl text-xs font-bold text-[#065f46] flex items-center gap-2 animate-fadeIn shadow-2xs">
               <span className="material-symbols-outlined text-[18px]">verified</span>
@@ -113,7 +99,7 @@ export default function ManagerDashboardPage() {
                 Manager Dashboard
               </h1>
               <p className="text-xs text-[#45464d] mt-1">
-                Executive portfolio queues, agent-verified claim approvals, and statutory appeals arbitration.
+                Claims awaiting your decision, agent-verified approvals and policyholder appeals.
               </p>
             </div>
 
@@ -147,7 +133,7 @@ export default function ManagerDashboardPage() {
               <span className="text-2xl font-extrabold text-[#d97706] mt-1 block">
                 {appealsAwaitingDecision.length}
               </span>
-              <span className="text-[10px] text-[#d97706] font-semibold">Statutory contests</span>
+              <span className="text-[10px] text-[#d97706] font-semibold">Disputed decisions</span>
             </div>
 
             <div className="bg-white p-4 rounded-xl border border-[#d3e4fe] shadow-xs">
@@ -172,12 +158,12 @@ export default function ManagerDashboardPage() {
 
             <div className="bg-white p-4 rounded-xl border border-[#d3e4fe] shadow-xs">
               <span className="text-[10px] font-bold text-[#45464d] uppercase tracking-wider block">
-                DOI Compliance
+                Total Claims
               </span>
               <span className="text-2xl font-extrabold text-[#0b1c30] mt-1 block">
-                99.8%
+                {claims.length}
               </span>
-              <span className="text-[10px] text-[#069669] font-semibold">18hr target met</span>
+              <span className="text-[10px] text-[#45464d] font-semibold">All claims on record</span>
             </div>
           </div>
 
@@ -190,7 +176,7 @@ export default function ManagerDashboardPage() {
                   Prioritized Executive Review Queue
                 </span>
                 <span className="text-[11px] px-2 py-0.5 rounded-full bg-[#d3e4fe] text-[#1d3989] font-bold">
-                  {displayedQueue.length} files
+                  {displayedQueue.length} {displayedQueue.length === 1 ? "file" : "files"}
                 </span>
               </div>
             </div>
@@ -209,46 +195,63 @@ export default function ManagerDashboardPage() {
                   </tr>
                 </thead>
                 <tbody className="text-xs text-[#0b1c30] divide-y divide-[#e5eeff]">
+                  {displayedQueue.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="py-10 px-4 text-center">
+                        <span className="material-symbols-outlined text-[32px] text-[#069669] block">task_alt</span>
+                        <span className="text-sm font-bold text-[#0b1c30] block mt-1">You&apos;re all caught up</span>
+                        <span className="text-xs text-[#45464d]">No claims are waiting for a manager decision right now.</span>
+                      </td>
+                    </tr>
+                  )}
                   {displayedQueue.map((item) => (
                     <tr key={item.id} className="hover:bg-[#eff4ff]/60 transition-colors">
-                      <td className="py-3 px-4 font-bold text-[#0b1c30]">
-                        {item.id}
+                      <td className="py-3 px-4 font-bold text-[#0b1c30] whitespace-nowrap">
+                        {item.claimRef || item.id}
                       </td>
                       <td className="py-3 px-4">
                         <span className="font-semibold text-[#0b1c30] block">{item.policyHolder}</span>
                         <span className="text-[11px] text-[#45464d]">{item.vehicle}</span>
                       </td>
                       <td className="py-3 px-4 text-[#45464d]">
-                        {item.filedDate}
+                        {formatDate(item.filedDate)}
                       </td>
                       <td className="py-3 px-4">
-                        <span className="text-xs font-semibold text-[#4059aa]">
-                          {item.assignedTo} ({item.status})
+                        <span className="text-xs font-semibold text-[#4059aa] block whitespace-nowrap">
+                          {item.assignedAgentName || "Unassigned"}
+                        </span>
+                        <span className="mt-0.5 inline-block whitespace-nowrap px-1.5 py-0.5 rounded bg-[#f1f5f9] text-[#475569] text-[10px] font-bold">
+                          {item.status}
                         </span>
                       </td>
-                      <td className="py-3 px-4 max-w-xs">
+                      <td className="py-3 px-4 min-w-[180px] max-w-xs">
                         <span className="text-[11px] font-medium text-[#ba1a1a] block leading-tight">
                           {item.attentionReason}
                         </span>
                       </td>
                       <td className="py-3 px-4">
-                        <span className="px-2 py-0.5 rounded bg-[#eff4ff] text-[#1d3989] font-bold text-[10px] border border-[#d3e4fe]">
+                        <span className="inline-block whitespace-nowrap px-2 py-0.5 rounded bg-[#eff4ff] text-[#1d3989] font-bold text-[10px] border border-[#d3e4fe]">
                           {item.stage}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-right space-x-1.5">
+                      <td className="py-3 px-4">
+                        <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+                        {canTransition("manager", item.status, "Approved") && (
                         <button
                           onClick={() => handleQuickApprove(item.id, item.damageEstimate)}
                           className="px-2.5 py-1 bg-[#059669] hover:bg-[#047857] text-white text-xs font-bold rounded shadow-2xs transition-colors cursor-pointer"
                         >
                           Approve
                         </button>
+                        )}
                         <Link
                           href={item.actionUrl}
-                          className="px-2.5 py-1 bg-[#131b2e] hover:bg-[#000000] text-white text-xs font-semibold rounded shadow-2xs transition-colors inline-block"
+                          onClick={() => setSelectedClaim(item)}
+                          className="px-2.5 py-1 bg-[#131b2e] hover:bg-[#000000] text-white text-xs font-semibold rounded shadow-2xs transition-colors"
                         >
                           Inspect File
                         </Link>
+                        </div>
                       </td>
                     </tr>
                   ))}

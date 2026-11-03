@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/Header";
 import { useClaims } from "../../context/ClaimsContext";
+import { formatDate } from "../../lib/format";
 
 interface AppealRecord {
   id: string;
@@ -35,7 +36,7 @@ export default function RevaluationManagementPage() {
       originalRejectionReason: c.statusNote || "Original determination on file.",
       rejectionDate: c.filedDate,
       appealSubmissionDate: c.filedDate,
-      appealDeadline: "Within statutory appeal window",
+      appealDeadline: "",
       submittedExplanation: c.statusNote || "",
       newSupportingEvidence: "",
       agentNotes: "",
@@ -102,7 +103,7 @@ export default function RevaluationManagementPage() {
   return (
     <div className="min-h-screen bg-[#f8f9ff] flex">
       <Sidebar />
-      <div className="flex-1 ml-72 flex flex-col min-w-0">
+      <div className="flex-1 app-main flex flex-col min-w-0">
         <Header />
 
         <main className="flex-1 p-6 max-w-7xl w-full mx-auto flex flex-col gap-6">
@@ -111,13 +112,13 @@ export default function RevaluationManagementPage() {
               <div className="flex items-center gap-1.5 text-xs text-[#45464d] font-semibold mb-1">
                 <span>Managerial Dispute Arbitration</span>
                 <span>•</span>
-                <span className="text-[#4059aa]">Statutory Appeals Workspace</span>
+                <span className="text-[#4059aa]">Appeals Workspace</span>
               </div>
               <h1 className="text-2xl font-bold text-[#0b1c30] tracking-tight">
                 Revaluation & Appeals Management
               </h1>
               <p className="text-xs text-[#45464d] mt-1">
-                Adjudicate formal policyholder contestations filed within the 7-day statutory window against previously rejected claim decisions.
+                Review appeals that policyholders have filed against rejected claims.
               </p>
             </div>
 
@@ -175,7 +176,7 @@ export default function RevaluationManagementPage() {
                     </span>
                     <p className="text-[#0b1c30] text-[11px]">{appeal.originalRejectionReason}</p>
                     <span className="text-[10px] text-[#76777d] block">
-                      Rejection Date: {appeal.rejectionDate} • Appeal Deadline: {appeal.appealDeadline}
+                      Claim filed: {formatDate(appeal.rejectionDate)}
                     </span>
                   </div>
 
@@ -196,7 +197,7 @@ export default function RevaluationManagementPage() {
 
                 <div className="pt-3 border-t border-[#e5eeff] flex items-center justify-between">
                   <span className="text-[10px] text-[#76777d]">
-                    Submitted: {appeal.appealSubmissionDate}
+                    Claim filed: {formatDate(appeal.appealSubmissionDate)}
                   </span>
                   <button
                     onClick={() => setSelectedAppeal(appeal)}
@@ -227,7 +228,7 @@ export default function RevaluationManagementPage() {
                     <span>Claim #{selectedAppeal.claimId}</span>
                   </div>
                   <h2 className="text-xl font-bold text-[#0b1c30] mt-0.5">
-                    Statutory Contestation: {selectedAppeal.vehicle} ({selectedAppeal.policyHolder})
+                    Appeal: {selectedAppeal.vehicle} ({selectedAppeal.policyHolder})
                   </h2>
                 </div>
 
@@ -274,7 +275,7 @@ export default function RevaluationManagementPage() {
                 {decisionAction && (
                   <div className="animate-fadeIn">
                     <label className="text-xs font-bold text-[#0b1c30] block mb-1">
-                      Mandatory Statutory Written Reason *
+                      Written reason for decision *
                     </label>
                     <textarea
                       rows={3}

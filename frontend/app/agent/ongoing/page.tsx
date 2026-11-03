@@ -6,6 +6,10 @@ import Header from "../../components/Header";
 import { useClaims } from "../../context/ClaimsContext";
 import type { ClaimRecord } from "../../services/types";
 import MLRiskAssessment from "../../components/MLRiskAssessment";
+import EvidenceGallery from "../../components/EvidenceGallery";
+import { ClaimTimeline, IncidentDetails } from "../../components/ClaimFacts";
+import { formatDate, formatINR } from "../../lib/format";
+import { agentCanRequestInfo, agentCanVerify, blockedReason } from "../../lib/workflow";
 
 type OngoingTab = "NEW" | "UNDER_REVIEW" | "DOCS_REQUIRED" | "REVALUATION" | "READY_FOR_MANAGER";
 
@@ -68,7 +72,7 @@ export default function AgentOngoingClaimsPage() {
     showNotification(
       res
         ? `Claim #${claim.claimRef || claim.id} verified and queued for Manager Review.`
-        : `Could not verify claim #${claim.claimRef || claim.id}.`
+        : `Could not verify claim #${claim.claimRef || claim.id}: ${blockedReason(claim.status)}`
     );
   };
 
@@ -88,7 +92,7 @@ export default function AgentOngoingClaimsPage() {
   return (
     <div className="min-h-screen bg-[#f8f9ff] flex">
       <Sidebar />
-      <div className="flex-1 ml-72 flex flex-col min-w-0">
+      <div className="flex-1 app-main flex flex-col min-w-0">
         <Header />
 
         <main className="flex-1 p-6 max-w-7xl w-full mx-auto flex flex-col gap-6">
@@ -174,18 +178,18 @@ export default function AgentOngoingClaimsPage() {
                         onClick={() => setInspectingClaim(claim)}
                       >
                         <td className="py-3 px-4 font-bold text-[#0b1c30]">
-                          {claim.id}
+                          {claim.claimRef || claim.id}
                         </td>
                         <td className="py-3 px-4">
                           <span className="font-semibold text-[#0b1c30] block">{claim.policyHolder}</span>
-                          <span className="text-[11px] text-[#45464d]">Pol #{claim.policyNumber}</span>
+                          <span className="text-[11px] text-[#45464d]">{claim.policyNumber ? `Policy ${claim.policyNumber}` : "No policy linked"}</span>
                         </td>
                         <td className="py-3 px-4">{claim.vehicle}</td>
                         <td className="py-3 px-4">
                           <span className="text-xs">{claim.severity}</span>
                         </td>
                         <td className="py-3 px-4 font-mono font-bold">
-                          ${claim.damageEstimate.toLocaleString()}
+                          {formatINR(claim.damageEstimate)}
                         </td>
                         <td className="py-3 px-4">
                           <span
@@ -233,9 +237,9 @@ export default function AgentOngoingClaimsPage() {
                 {/* Header */}
                 <div>
                   <div className="flex items-center gap-2 text-xs text-[#45464d] font-semibold">
-                    <span>Claim Reference: {inspectingClaim.id}</span>
+                    <span>Claim Reference: {inspectingClaim.claimRef || inspectingClaim.id}</span>
                     <span>•</span>
-                    <span>Policy #{inspectingClaim.policyNumber}</span>
+                    <span>{inspectingClaim.policyNumber ? `Policy ${inspectingClaim.policyNumber}` : "No policy linked"}</span>
                   </div>
                   <h2 className="text-xl font-bold text-[#0b1c30] mt-0.5">
                     {inspectingClaim.vehicle} — {inspectingClaim.collisionType || inspectingClaim.incidentType}
@@ -249,15 +253,22 @@ export default function AgentOngoingClaimsPage() {
                   severity={inspectingClaim.severity}
                 />
 
+                {/* Client-uploaded photos & documents */}
+                <IncidentDetails claim={inspectingClaim} />
+
+                <EvidenceGallery claimId={inspectingClaim.id} />
+
+                <ClaimTimeline claimId={inspectingClaim.id} />
+
                 {/* Claim Physical Details */}
                 <div className="p-3 bg-[#f8f9ff] border border-[#e5eeff] rounded-xl grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                   <div>
                     <span className="text-[10px] text-[#45464d] uppercase font-bold block">Incident Date</span>
-                    <span className="font-semibold text-[#0b1c30]">{inspectingClaim.incidentDate}</span>
+                    <span className="font-semibold text-[#0b1c30]">{formatDate(inspectingClaim.incidentDate)}</span>
                   </div>
                   <div>
                     <span className="text-[10px] text-[#45464d] uppercase font-bold block">Appraisal Amount</span>
-                    <span className="font-semibold font-mono text-[#0b1c30]">${inspectingClaim.damageEstimate.toLocaleString()}</span>
+                    <span className="font-semibold font-mono text-[#0b1c30]">{formatINR(inspectingClaim.damageEstimate)}</span>
                   </div>
                   <div>
                     <span className="text-[10px] text-[#45464d] uppercase font-bold block">Police Report</span>
@@ -283,8 +294,15 @@ export default function AgentOngoingClaimsPage() {
                   />
                 </div>
 
-                {/* Action Controls */}
+                {/* Action Controls — only what the workflow allows from this status */}
+                {!agentCanVerify(inspectingClaim.status) && !agentCanRequestInfo(inspectingClaim.status) ? (
+                  <div className="pt-3 border-t border-[#e5eeff] text-xs text-[#45464d] flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[16px] text-[#4059aa]">info</span>
+                    {blockedReason(inspectingClaim.status)}
+                  </div>
+                ) : (
                 <div className="pt-3 border-t border-[#e5eeff] flex flex-wrap items-center justify-between gap-2">
+                  {agentCanRequestInfo(inspectingClaim.status) ? (
                   <button
                     onClick={() => setShowRequestInfoModal(true)}
                     className="px-3.5 py-2 bg-white hover:bg-[#ffdad6] text-[#ba1a1a] border border-[#fca5a5] text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5"
@@ -292,7 +310,11 @@ export default function AgentOngoingClaimsPage() {
                     <span className="material-symbols-outlined text-[16px]">help</span>
                     <span>Request Missing Info</span>
                   </button>
+                  ) : (
+                    <span />
+                  )}
 
+                  {agentCanVerify(inspectingClaim.status) && (
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => handleForwardManager(inspectingClaim)}
@@ -308,7 +330,9 @@ export default function AgentOngoingClaimsPage() {
                       <span>Verify & Authorize</span>
                     </button>
                   </div>
+                  )}
                 </div>
+                )}
               </div>
             </div>
           )}
@@ -321,7 +345,7 @@ export default function AgentOngoingClaimsPage() {
                   Request Missing Information from Policyholder
                 </h3>
                 <p className="text-xs text-[#45464d]">
-                  Specify the documentation or photographs required. Claim #{inspectingClaim.id} will transition to "Action Required" status.
+                  Specify the documentation or photographs required. Claim {inspectingClaim.claimRef || inspectingClaim.id} will transition to "Action Required" status.
                 </p>
                 <textarea
                   rows={3}

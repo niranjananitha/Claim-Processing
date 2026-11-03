@@ -21,13 +21,28 @@ CLAIM_BODY = {
     "police_report": True,
     "authorities_contacted": "Police",
     "witnesses": 1,
-    "state": "OH",
-    "city": "Columbus",
+    "state": "TN",
+    "city": "Chennai",
 }
+
+
+VEHICLE_BODY = {"category": "four_wheeler", "make": "Maruti Suzuki", "model": "Swift",
+                "year": 2022, "registration_number": "TN 01 AB 1234"}
+
+
+def add_vehicle(client, token, **overrides):
+    resp = client.post("/api/v1/vehicles", json={**VEHICLE_BODY, **overrides}, headers=auth(token))
+    if resp.status_code == 409:  # already registered for this client
+        return next(v for v in client.get("/api/v1/vehicles", headers=auth(token)).json()
+                    if v["registration_number"] == "TN01AB1234")
+    assert resp.status_code == 201, resp.text
+    return resp.json()
 
 
 def create_claim(client, token, **overrides):
     body = {**CLAIM_BODY, **overrides}
+    if "vehicle_id" not in body:
+        body["vehicle_id"] = add_vehicle(client, token)["id"]
     return client.post("/api/v1/claims", json=body, headers=auth(token))
 
 
@@ -110,3 +125,13 @@ def test_legal_transition_records_history_and_audit(client, make_user, db_sessio
         select(func.count()).select_from(AuditLog).where(AuditLog.entity_id == str(claim_id))
     )
     assert audits >= 1
+
+
+def test_client_cannot_attach_someone_elses_policy(client, make_user, db_session):
+    from app.models.policy import Policy
+    other, _ = make_user("client")
+    db_session.add(Policy(policy_number="OTHER-001", holder_id=other.id))
+    db_session.flush()
+    _, token = make_user("client")
+    data = create_claim(client, token, policy_number="OTHER-001").json()
+    assert data["policy_id"] is None

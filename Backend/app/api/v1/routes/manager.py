@@ -10,7 +10,7 @@ from app.dependencies.auth import require_role
 from app.models.claim import Claim
 from app.models.user import User
 from app.schemas.claim import ClaimOut
-from app.schemas.review import DecisionBody, ReasonBody
+from app.schemas.review import AssignBody, DecisionBody, ReasonBody
 from app.services import claim_service
 
 router = APIRouter(prefix="/manager", tags=["manager"])
@@ -51,3 +51,11 @@ def revaluation(claim_id: int, body: ReasonBody, manager: User = Depends(require
                 db: Session = Depends(get_db)):
     claim = claim_service.get_claim(db, manager, claim_id)
     return claim_service.change_status(db, manager, claim, "Revaluation", body.reason)
+
+
+@router.put("/claims/{claim_id}/assign", response_model=ClaimOut)
+def assign(claim_id: int, body: AssignBody, manager: User = Depends(require_role("manager")),
+           db: Session = Depends(get_db)):
+    """Give an agent access to a claim by assigning it to them."""
+    claim = claim_service.get_claim(db, manager, claim_id)
+    return claim_service.assign_agent(db, manager, claim, body.agent_id)

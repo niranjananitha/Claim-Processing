@@ -1,8 +1,9 @@
 """Claim business logic: creation, role-scoped access, audited status transitions."""
+import datetime as dt
 import random
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.permissions import STATUSES, role_can_transition
@@ -12,6 +13,7 @@ from app.models.claim_status_history import ClaimStatusHistory
 from app.models.policy import Policy
 from app.models.user import User
 from app.schemas.claim import ClaimCreate
+from app.services import vehicle_service
 
 
 def _generate_ref(db: Session) -> str:
@@ -22,9 +24,37 @@ def _generate_ref(db: Session) -> str:
     raise HTTPException(status_code=500, detail="Could not allocate claim reference")
 
 
+OPEN_STATUSES = ("Submitted", "Under Review", "Action Required", "Fraud Review",
+                 "Disputed", "Revaluation")
+
+
 def _pick_agent_id(db: Session) -> int | None:
-    agent = db.scalar(select(User).where(User.role == "agent").order_by(User.id))
-    return agent.id if agent else None
+    """Assign new claims to the active agent with the fewest open claims."""
+    agents = db.scalars(
+        select(User).where(User.role == "agent", User.is_active.is_(True)).order_by(User.id)
+    ).all()
+    if not agents:
+        return None
+    open_counts = dict(db.execute(
+        select(Claim.assigned_agent_id, func.count())
+        .where(Claim.status.in_(OPEN_STATUSES))
+        .group_by(Claim.assigned_agent_id)
+    ).all())
+    return min(agents, key=lambda a: (open_counts.get(a.id, 0), a.id)).id
+
+
+def assign_agent(db: Session, manager: User, claim: Claim, agent_id: int) -> Claim:
+    agent = db.get(User, agent_id)
+    if not agent or agent.role != "agent":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
+    if not agent.is_active:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="Agent access is disabled; enable it before assigning")
+    claim.assigned_agent_id = agent.id
+    _record_audit(db, manager.id, "claim.assign", claim, f"Assigned to agent {agent.id}")
+    db.commit()
+    db.refresh(claim)
+    return claim
 
 
 def _record_audit(db: Session, actor_id: int, action: str, claim: Claim, detail: str) -> None:
@@ -33,9 +63,15 @@ def _record_audit(db: Session, actor_id: int, action: str, claim: Claim, detail:
 
 
 def create_claim(db: Session, client: User, data: ClaimCreate) -> Claim:
+    vehicle = vehicle_service.get_owned_vehicle(db, client, data.vehicle_id)
+    if data.incident_date and data.incident_date > dt.date.today():
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail="Incident date cannot be in the future")
     policy = None
     if data.policy_number:
-        policy = db.scalar(select(Policy).where(Policy.policy_number == data.policy_number))
+        # Only the client's own policy may be attached to their claim.
+        policy = db.scalar(select(Policy).where(Policy.policy_number == data.policy_number,
+                                                Policy.holder_id == client.id))
     if policy is None:
         policy = db.scalar(select(Policy).where(Policy.holder_id == client.id))
 
@@ -46,19 +82,26 @@ def create_claim(db: Session, client: User, data: ClaimCreate) -> Claim:
         assigned_agent_id=_pick_agent_id(db),
         policy_holder=client.name,
         incident_date=data.incident_date,
+        incident_time=data.incident_time,
         incident_type=data.incident_type,
         collision_type=data.collision_type,
         severity=data.severity,
-        vehicle=data.vehicle,
-        auto_make=data.auto_make,
-        auto_model=data.auto_model,
-        auto_year=str(data.auto_year),
+        vehicle_id=vehicle.id,
+        vehicle_category=vehicle.category,
+        vehicle=vehicle.label,
+        auto_make=vehicle.make,
+        auto_model=vehicle.model,
+        auto_year=str(vehicle.year),
         damage_estimate=data.damage_estimate,
         vehicle_claim=data.vehicle_claim,
         injury_claim=data.injury_claim,
         property_claim=data.property_claim,
         status="Submitted",
         status_note="Claim intake received; pending adjuster review.",
+        incident_location=data.incident_location,
+        incident_description=data.incident_description,
+        damaged_areas=data.damaged_areas,
+        police_report_number=data.police_report_number,
         police_report=data.police_report,
         authorities_contacted=data.authorities_contacted,
         witnesses=data.witnesses,

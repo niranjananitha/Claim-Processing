@@ -127,9 +127,18 @@ export default function MLRiskAssessment({ claimId }: MLRiskAssessmentProps) {
           {contributing_factors.length === 0 && (
             <p className="text-[11px] text-[#76777d]">No contribution data returned.</p>
           )}
+          {contributing_factors.length > 0 && (
+            <div className="flex justify-between text-[10px] font-semibold text-[#76777d] px-2">
+              <span>← lowers risk</span>
+              <span>0</span>
+              <span>raises risk →</span>
+            </div>
+          )}
           {contributing_factors.map((factor, index) => {
             const isNegative = factor.shap_value < 0;
-            const magnitude = Math.min(Math.abs(factor.shap_value) * 100, 100);
+            // Diverging scale: zero is the centre line; the largest |SHAP| fills its half.
+            const maxAbs = Math.max(...contributing_factors.map((f) => Math.abs(f.shap_value)), 1e-9);
+            const halfPct = (Math.abs(factor.shap_value) / maxAbs) * 50;
             return (
               <div key={index} className="p-2 bg-[#f8f9ff] border border-[#e5eeff] rounded-lg text-xs">
                 <div className="flex items-center justify-between mb-1">
@@ -143,12 +152,19 @@ export default function MLRiskAssessment({ claimId }: MLRiskAssessmentProps) {
                     {factor.shap_value.toFixed(2)} SHAP
                   </span>
                 </div>
-                <div className="w-full h-1.5 bg-[#e2e8f0] rounded-full overflow-hidden flex">
-                  {isNegative ? (
-                    <div className="h-full bg-[#059669] rounded-full ml-auto" style={{ width: `${magnitude}%` }} />
-                  ) : (
-                    <div className="h-full bg-[#ba1a1a] rounded-full" style={{ width: `${magnitude}%` }} />
-                  )}
+                <div className="relative w-full h-2 bg-[#e2e8f0] rounded-full overflow-hidden">
+                  <span className="absolute left-1/2 top-0 h-full w-px bg-[#94a3b8] z-10" />
+                  <div
+                    className={`shap-bar absolute top-0 h-full ${
+                      isNegative ? "bg-[#059669] rounded-l-full" : "bg-[#ba1a1a] rounded-r-full"
+                    }`}
+                    style={{
+                      width: `${halfPct}%`,
+                      left: isNegative ? `${50 - halfPct}%` : "50%",
+                      transformOrigin: isNegative ? "right center" : "left center",
+                      animationDelay: `${index * 80}ms`,
+                    }}
+                  />
                 </div>
               </div>
             );

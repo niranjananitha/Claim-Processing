@@ -17,7 +17,7 @@ export default function Header() {
           </span>
           <input
             type="text"
-            placeholder="Search claim ID, VIN, policy, or driver name..."
+            placeholder="Search claim ID, registration number, policy, or name..."
             className="w-full pl-10 pr-4 py-1.5 text-xs bg-[#f8f9ff] border border-[#c6c6cd] rounded-lg focus:outline-none focus:border-[#4059aa] text-[#0b1c30]"
           />
         </div>

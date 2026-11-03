@@ -11,10 +11,15 @@ import type {
   ApiResult,
   ClaimDTO,
   ClaimRecord,
+  DocumentDTO,
   MLResultDTO,
   StatusHistoryDTO,
   UserDTO,
   UserSession,
+  VehicleCatalog,
+  VehicleDTO,
+  VehicleInput,
+  PolicyDTO,
 } from "./types";
 
 export type { ClaimRecord } from "./types";
@@ -92,10 +97,15 @@ async function request<T>(
   }
 
   if (!res.ok) {
-    const detail =
-      body && typeof body === "object" && "detail" in body
-        ? String((body as { detail: unknown }).detail)
-        : `Request failed (${res.status})`;
+    const raw = body && typeof body === "object" && "detail" in body
+      ? (body as { detail: unknown }).detail
+      : undefined;
+    // FastAPI validation errors are a list of {loc, msg}; surface the first readable message.
+    const detail = Array.isArray(raw)
+      ? String((raw[0] as { msg?: string })?.msg || "Invalid input").replace(/^Value error, /, "")
+      : raw !== undefined
+      ? String(raw)
+      : `Request failed (${res.status})`;
     return { ok: false, status: res.status, error: detail };
   }
   return { ok: true, status: res.status, data: body as T };
@@ -118,7 +128,7 @@ export function toClaimRecord(c: ClaimDTO): ClaimRecord {
   return {
     id: String(c.id),
     claimRef: c.claim_ref,
-    policyNumber: c.policy_id ? String(c.policy_id) : "",
+    policyNumber: c.policy_number || "",
     policyHolder: c.policy_holder,
     incidentDate: c.incident_date ?? "",
     filedDate: c.filed_date,
@@ -136,6 +146,13 @@ export function toClaimRecord(c: ClaimDTO): ClaimRecord {
     status: c.status,
     statusNote: c.status_note,
     assignedTo: c.assigned_agent_id ? String(c.assigned_agent_id) : "",
+    assignedAgentName: c.assigned_agent_name || "",
+    incidentTime: c.incident_time ?? "",
+    vehicleCategory: c.vehicle_category || "",
+    incidentLocation: c.incident_location || "",
+    incidentDescription: c.incident_description || "",
+    damagedAreas: c.damaged_areas || "",
+    policeReportNumber: c.police_report_number || "",
     policeReport: c.police_report,
     authoritiesContacted: c.authorities_contacted,
     witnesses: c.witnesses,
@@ -146,7 +163,9 @@ export function toClaimRecord(c: ClaimDTO): ClaimRecord {
 
 export interface ClaimCreateInput {
   policy_number?: string;
+  vehicle_id: number;
   incident_date?: string;
+  incident_time?: string;
   incident_type?: string;
   collision_type?: string;
   severity?: string;
@@ -158,6 +177,10 @@ export interface ClaimCreateInput {
   vehicle_claim?: number;
   injury_claim?: number;
   property_claim?: number;
+  incident_location?: string;
+  incident_description?: string;
+  damaged_areas?: string;
+  police_report_number?: string;
   police_report?: boolean;
   authorities_contacted?: string;
   witnesses?: number;
@@ -167,10 +190,16 @@ export interface ClaimCreateInput {
 
 // ------------------------------------------------------------------- domain API
 export const authApi = {
-  register: (name: string, email: string, password: string, policy_number?: string) =>
+  register: (
+    name: string,
+    email: string,
+    password: string,
+    vehicle: VehicleInput,
+    policy_number?: string
+  ) =>
     request<{ access_token: string; user: UserDTO }>("/auth/register", {
       method: "POST",
-      body: JSON.stringify({ name, email, password, policy_number }),
+      body: JSON.stringify({ name, email, password, policy_number, vehicle }),
     }),
   login: (email: string, password: string) =>
     request<{ access_token: string; user: UserDTO }>("/auth/login", {
@@ -198,8 +227,17 @@ export const claimsApi = {
 
 export const policiesApi = {
   list: (customerId?: number) =>
-    request<unknown[]>(`/policies${customerId ? `?customer_id=${customerId}` : ""}`),
-  get: (policyNumber: string) => request<unknown>(`/policies/${policyNumber}`),
+    request<PolicyDTO[]>(`/policies${customerId ? `?customer_id=${customerId}` : ""}`),
+  get: (policyNumber: string) => request<PolicyDTO>(`/policies/${policyNumber}`),
+};
+
+export const vehiclesApi = {
+  catalog: () => request<VehicleCatalog>("/vehicles/catalog"),
+  mine: () => request<VehicleDTO[]>("/vehicles"),
+  add: (v: VehicleInput) =>
+    request<VehicleDTO>("/vehicles", { method: "POST", body: JSON.stringify(v) }),
+  /** Removes it from your list; claims already filed on it keep their record. */
+  remove: (id: number) => request<void>(`/vehicles/${id}`, { method: "DELETE" }),
 };
 
 export const agentApi = {
@@ -237,6 +275,26 @@ export const managerApi = {
       method: "POST",
       body: JSON.stringify({ reason }),
     }),
+  assign: (id: string | number, agentId: number) =>
+    request<ClaimDTO>(`/manager/claims/${id}/assign`, {
+      method: "PUT",
+      body: JSON.stringify({ agent_id: agentId }),
+    }),
+};
+
+export const usersApi = {
+  list: (role?: "client" | "agent" | "manager") =>
+    request<UserDTO[]>(`/users${role ? `?role=${role}` : ""}`),
+  createStaff: (name: string, email: string, password: string, role: "agent" | "manager") =>
+    request<UserDTO>("/users/staff", {
+      method: "POST",
+      body: JSON.stringify({ name, email, password, role }),
+    }),
+  setAccess: (userId: number, isActive: boolean) =>
+    request<UserDTO>(`/users/${userId}/access`, {
+      method: "PATCH",
+      body: JSON.stringify({ is_active: isActive }),
+    }),
 };
 
 export const dashboardApi = {
@@ -257,7 +315,25 @@ export const documentsApi = {
       body: fd,
     });
   },
+  list: (claimId: string | number) => request<DocumentDTO[]>(`/claims/${claimId}/documents`),
   downloadUrl: (docId: number) => `${API_BASE_URL}/documents/${docId}`,
+  /** Fetch a document's bytes with the bearer token (an <img src> can't send it). */
+  fetchBlob: async (docId: number, _retried = false): Promise<Blob | null> => {
+    const headers: Record<string, string> = {};
+    if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+    try {
+      const res = await fetch(`${API_BASE_URL}/documents/${docId}`, {
+        headers,
+        credentials: "include",
+      });
+      if (res.status === 401 && !_retried && (await tryRefresh())) {
+        return documentsApi.fetchBlob(docId, true);
+      }
+      return res.ok ? await res.blob() : null;
+    } catch {
+      return null;
+    }
+  },
   delete: (docId: number) => request<void>(`/documents/${docId}`, { method: "DELETE" }),
 };
 

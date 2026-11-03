@@ -1,12 +1,16 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import Header from "../components/Header";
 import { useClaims } from "../context/ClaimsContext";
 import type { ClaimRecord } from "../services/types";
 import MLRiskAssessment from "../components/MLRiskAssessment";
+import EvidenceGallery from "../components/EvidenceGallery";
 import RouteGuard from "../components/RouteGuard";
+import { formatDate, formatDateTimeIST, formatINR, formatINRCompact } from "../lib/format";
+import { ClaimTimeline, IncidentDetails } from "../components/ClaimFacts";
+import { documentsApi } from "../services/api";
 
 export default function ClaimHistoryPage() {
   return (
@@ -17,7 +21,12 @@ export default function ClaimHistoryPage() {
 }
 
 function ClaimHistoryInner() {
-  const { claims, selectedClaim, setSelectedClaim, updateClaimStatus, currentUser, role, loading } = useClaims();
+  const { claims, selectedClaim, setSelectedClaim, changeStatus, currentUser, role, loading, loadClaims } = useClaims();
+
+  // Other users change claims too (e.g. a manager approving an agent's claim): fetch fresh data on open.
+  useEffect(() => {
+    void loadClaims();
+  }, [loadClaims]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [severityFilter, setSeverityFilter] = useState("ALL");
@@ -25,7 +34,8 @@ function ClaimHistoryInner() {
   // Appeal Initiation Modal State
   const [showAppealModal, setShowAppealModal] = useState(false);
   const [appealExplanation, setAppealExplanation] = useState("");
-  const [appealEvidenceFile, setAppealEvidenceFile] = useState("independent_mechanic_inspection.pdf");
+  const [appealEvidenceFile, setAppealEvidenceFile] = useState<File | null>(null);
+  const [appealSubmitting, setAppealSubmitting] = useState(false);
   const [appealToast, setAppealToast] = useState<string | null>(null);
   const [appealError, setAppealError] = useState<string | null>(null);
 
@@ -61,7 +71,7 @@ function ClaimHistoryInner() {
       "Vehicle",
       "Collision Type",
       "Severity",
-      "Damage Estimate",
+      "Damage Estimate (INR)",
       "Status",
       "Adjuster",
     ];
@@ -69,13 +79,13 @@ function ClaimHistoryInner() {
       c.id,
       c.policyNumber,
       `"${c.policyHolder}"`,
-      c.incidentDate,
+      formatDate(c.incidentDate),
       `"${c.vehicle}"`,
       `"${c.collisionType || c.incidentType}"`,
       `"${c.severity}"`,
       c.damageEstimate,
       `"${c.status}"`,
-      c.assignedTo,
+      `"${c.assignedAgentName || "Unassigned"}"`,
     ]);
 
     const csvContent =
@@ -84,36 +94,52 @@ function ClaimHistoryInner() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `aegis_claims_audit_${new Date().toISOString().split("T")[0]}.csv`);
+    link.setAttribute("download", `aegis_claims_${new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" })}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  const handleInitiateAppeal = () => {
+  const handleInitiateAppeal = async () => {
     if (!selectedClaim || !appealExplanation.trim()) {
-      setAppealError("Please enter a factual explanation for the statutory appeal.");
+      setAppealError("Please explain why you are disputing this decision.");
       return;
     }
     setAppealError(null);
-
-    updateClaimStatus(
-      selectedClaim.id,
+    setAppealSubmitting(true);
+    const claim = selectedClaim;
+    if (appealEvidenceFile) {
+      const kind = appealEvidenceFile.type === "application/pdf" ? "document" : "image";
+      const up = await documentsApi.upload(claim.id, appealEvidenceFile, kind);
+      if (!up.ok) {
+        setAppealSubmitting(false);
+        setAppealError(up.error || "Could not upload the supporting document.");
+        return;
+      }
+    }
+    const attached = appealEvidenceFile ? ` Supporting document attached: ${appealEvidenceFile.name}.` : "";
+    const res = await changeStatus(
+      claim.id,
       "Disputed",
-      `Statutory appeal filed on ${new Date().toLocaleDateString()}. Policyholder justification: "${appealExplanation}". Attached Evidence: ${appealEvidenceFile}. Forwarded to Revaluation Management queue.`
+      `Appeal filed on ${formatDateTimeIST(new Date())}. Reason: "${appealExplanation.trim()}".${attached}`
     );
-
+    setAppealSubmitting(false);
+    if (!res) {
+      setAppealError("This claim cannot be appealed in its current state.");
+      return;
+    }
     setShowAppealModal(false);
     setSelectedClaim(null);
     setAppealExplanation("");
-    setAppealToast(`Statutory appeal submitted for Claim #${selectedClaim.id}. Forwarded to Revaluation Management.`);
+    setAppealEvidenceFile(null);
+    setAppealToast(`Appeal submitted for claim ${claim.claimRef || claim.id}. A manager will review it.`);
     setTimeout(() => setAppealToast(null), 5000);
   };
 
   return (
     <div className="min-h-screen bg-[#f8f9ff] flex">
       <Sidebar />
-      <div className="flex-1 ml-72 flex flex-col min-w-0">
+      <div className="flex-1 app-main flex flex-col min-w-0">
         <Header />
 
         <main className="flex-1 p-6 max-w-7xl w-full mx-auto flex flex-col gap-6">
@@ -129,7 +155,7 @@ function ClaimHistoryInner() {
                 Claim History Management
               </h1>
               <p className="text-xs text-[#45464d] mt-1 max-w-2xl">
-                Search, filter, and inspect managerial audit trails, binding coverage determinations, and historic statutory appeals across the active enterprise ledger.
+                Search, filter and inspect every claim, its decisions and appeals.
               </p>
             </div>
 
@@ -176,21 +202,23 @@ function ClaimHistoryInner() {
             </div>
             <div className="bg-white p-4 rounded-xl border border-[#d3e4fe] shadow-xs">
               <span className="text-[11px] font-bold text-[#45464d] uppercase tracking-wider block">
-                Total Settlement Vol.
+                Approved Value
               </span>
               <span className="text-2xl font-extrabold text-[#069669] mt-1 block">
-                ${(filteredClaims.reduce((acc, c) => acc + c.damageEstimate, 0) / 1000).toFixed(0)}k
+                {formatINRCompact(
+                  filteredClaims.filter((c) => c.status === "Approved").reduce((acc, c) => acc + c.damageEstimate, 0)
+                )}
               </span>
-              <span className="text-[11px] text-[#45464d]">aggregate payout</span>
+              <span className="text-[11px] text-[#45464d]">approved claims in view</span>
             </div>
             <div className="bg-white p-4 rounded-xl border border-[#d3e4fe] shadow-xs">
               <span className="text-[11px] font-bold text-[#45464d] uppercase tracking-wider block">
-                Audit Status
+                Open Claims
               </span>
               <span className="text-2xl font-extrabold text-[#0b1c30] mt-1 block">
-                100%
+                {filteredClaims.filter((c) => !["Approved", "Rejected"].includes(c.status)).length}
               </span>
-              <span className="text-[11px] text-[#069669] font-semibold">Compliant</span>
+              <span className="text-[11px] text-[#45464d]">awaiting a decision</span>
             </div>
           </div>
 
@@ -289,25 +317,25 @@ function ClaimHistoryInner() {
                       onClick={() => setSelectedClaim(claim)}
                     >
                       <td className="py-3 px-4 font-bold text-[#0b1c30]">
-                        {claim.id}
+                        {claim.claimRef || claim.id}
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex flex-col">
                           <span className="font-semibold text-[#0b1c30]">{claim.policyHolder}</span>
-                          <span className="text-[11px] text-[#45464d]">Pol #{claim.policyNumber}</span>
+                          <span className="text-[11px] text-[#45464d]">{claim.policyNumber ? `Policy ${claim.policyNumber}` : "No policy linked"}</span>
                         </div>
                       </td>
                       <td className="py-3 px-4">
                         {claim.vehicle}
                       </td>
                       <td className="py-3 px-4 text-[#45464d]">
-                        {claim.incidentDate}
+                        {formatDate(claim.incidentDate)}
                       </td>
                       <td className="py-3 px-4">
                         <span className="text-xs">{claim.collisionType || claim.incidentType}</span>
                       </td>
                       <td className="py-3 px-4 font-mono font-semibold">
-                        ${claim.damageEstimate.toLocaleString()}
+                        {formatINR(claim.damageEstimate)}
                       </td>
                       <td className="py-3 px-4">
                         <span
@@ -327,7 +355,7 @@ function ClaimHistoryInner() {
                         </span>
                       </td>
                       <td className="py-3 px-4 text-xs font-semibold text-[#4059aa]">
-                        {claim.assignedTo}
+                        {claim.assignedAgentName || "Unassigned"}
                       </td>
                       <td className="py-3 px-4 text-right">
                         <button
@@ -360,11 +388,11 @@ function ClaimHistoryInner() {
 
                 <div className="flex items-center gap-2 mb-0.5">
                   <span className="text-xs font-bold text-[#4059aa]">
-                    Audit Record: {selectedClaim.id}
+                    Audit Record: {selectedClaim.claimRef || selectedClaim.id}
                   </span>
                   <span>•</span>
                   <span className="text-xs text-[#45464d]">
-                    Policy #{selectedClaim.policyNumber} ({selectedClaim.policyHolder})
+                    {selectedClaim.policyNumber ? `Policy ${selectedClaim.policyNumber}` : "No policy linked"} ({selectedClaim.policyHolder})
                   </span>
                 </div>
 
@@ -400,68 +428,17 @@ function ClaimHistoryInner() {
                     <span className="font-bold text-[#1d3989]">
                       Official Determination / Adjudication Note:
                     </span>
-                    <span className="text-[11px] text-[#45464d]">Filed: {selectedClaim.filedDate}</span>
+                    <span className="text-[11px] text-[#45464d]">Filed: {formatDate(selectedClaim.filedDate)}</span>
                   </div>
                   <p className="text-[#45464d]">{selectedClaim.statusNote}</p>
                 </div>
 
-                {/* Complete Timeline Audit */}
-                <div>
-                  <span className="text-xs font-bold text-[#0b1c30] uppercase tracking-wider block mb-2">
-                    Official Adjudication Timeline
-                  </span>
-                  <div className="space-y-2 border-l-2 border-[#d3e4fe] pl-3 ml-1.5 text-xs">
-                    <div className="relative">
-                      <span className="w-2.5 h-2.5 rounded-full bg-[#069669] absolute -left-[18px] top-1" />
-                      <span className="font-bold text-[#0b1c30] block">Incident Reported & First Notice of Loss</span>
-                      <span className="text-[11px] text-[#76777d]">{selectedClaim.incidentDate} — Form 104-A processed</span>
-                    </div>
-                    <div className="relative">
-                      <span className="w-2.5 h-2.5 rounded-full bg-[#4059aa] absolute -left-[18px] top-1" />
-                      <span className="font-bold text-[#0b1c30]">Adjuster Assignment & Damage Appraisal</span>
-                      <span className="text-[11px] text-[#76777d]">Assigned to Lead Adjuster {selectedClaim.assignedTo}</span>
-                    </div>
-                    {selectedClaim.status === "Approved" && (
-                      <div className="relative">
-                        <span className="w-2.5 h-2.5 rounded-full bg-[#069669] absolute -left-[18px] top-1" />
-                        <span className="font-bold text-[#069669] block">Managerial Settlement Authorized</span>
-                        <span className="text-[11px] text-[#76777d]">Approved amount: ${selectedClaim.damageEstimate.toLocaleString()}</span>
-                      </div>
-                    )}
-                    {selectedClaim.status === "Rejected" && (
-                      <div className="relative">
-                        <span className="w-2.5 h-2.5 rounded-full bg-[#ba1a1a] absolute -left-[18px] top-1" />
-                        <span className="font-bold text-[#ba1a1a] block">Claim Rejected by Underwriting Desk</span>
-                        <span className="text-[11px] text-[#76777d]">Statutory 7-day appeal window active</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <IncidentDetails claim={selectedClaim} />
 
-                {/* Supporting Documents & Verification Status */}
-                <div className="p-3 bg-[#f8f9ff] border border-[#e5eeff] rounded-xl text-xs">
-                  <span className="font-bold text-[#0b1c30] block mb-2">
-                    Supporting Documents & Evidence Status:
-                  </span>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
-                    <div className="flex items-center justify-between p-2 bg-white rounded border border-[#e5eeff]">
-                      <span>Police Incident Report</span>
-                      <span className="font-bold text-[#069669]">✓ Verified (CPD-99120)</span>
-                    </div>
-                    <div className="flex items-center justify-between p-2 bg-white rounded border border-[#e5eeff]">
-                      <span>Damage Photographs</span>
-                      <span className="font-bold text-[#069669]">✓ 4 Files Attached</span>
-                    </div>
-                    <div className="flex items-center justify-between p-2 bg-white rounded border border-[#e5eeff]">
-                      <span>Certified Body Shop Estimate</span>
-                      <span className="font-bold text-[#4059aa]">OEM Standard Match</span>
-                    </div>
-                    <div className="flex items-center justify-between p-2 bg-white rounded border border-[#e5eeff]">
-                      <span>Coverage Policy Check</span>
-                      <span className="font-bold text-[#069669]">✓ Loss Within Limits</span>
-                    </div>
-                  </div>
-                </div>
+                <ClaimTimeline claimId={selectedClaim.id} />
+
+                {/* Client-uploaded photos & documents */}
+                <EvidenceGallery claimId={selectedClaim.id} />
 
                 {/* Appeal Initiation trigger for rejected claims */}
                 <div className="border-t border-[#e5eeff] pt-3 flex items-center justify-between">
@@ -472,7 +449,7 @@ function ClaimHistoryInner() {
                         className="px-4 py-2 bg-[#ba1a1a] hover:bg-[#93000a] text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 transition-all"
                       >
                         <span className="material-symbols-outlined text-[16px]">balance</span>
-                        <span>Initiate Statutory Appeal (7-Day Window)</span>
+                        <span>Appeal this Decision</span>
                       </button>
                     </div>
                   ) : (
@@ -497,12 +474,12 @@ function ClaimHistoryInner() {
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-[24px] text-[#ba1a1a]">balance</span>
                   <h3 className="text-base font-bold text-[#0b1c30]">
-                    File Statutory Appeal: Claim #{selectedClaim.id}
+                    Appeal Decision: Claim {selectedClaim.claimRef || selectedClaim.id}
                   </h3>
                 </div>
 
                 <p className="text-xs text-[#45464d]">
-                  You have the statutory right under Ohio DOI policy regulations to contest this claim determination within 7 calendar days of notice. Please provide new mechanical evidence or factual clarifications.
+                  If you disagree with this decision you can appeal it. Explain why, and attach any new evidence such as a garage estimate or survey report. A manager will review your appeal.
                 </p>
 
                 {appealError && (
@@ -514,11 +491,11 @@ function ClaimHistoryInner() {
 
                 <div>
                   <label className="text-xs font-bold text-[#0b1c30] block mb-1">
-                    Factual Basis for Appeal & Contestation *
+                    Reason for appeal *
                   </label>
                   <textarea
                     rows={4}
-                    placeholder="Describe specific grounds for reconsideration, attached mechanic alignment reports, or counter-evidence..."
+                    placeholder="Explain why the decision should be reconsidered."
                     value={appealExplanation}
                     onChange={(e) => setAppealExplanation(e.target.value)}
                     className="w-full p-2.5 bg-[#f8f9ff] border border-[#c6c6cd] rounded-lg text-xs text-[#0b1c30] outline-none focus:border-[#4059aa]"
@@ -527,16 +504,13 @@ function ClaimHistoryInner() {
 
                 <div>
                   <label className="text-xs font-bold text-[#0b1c30] block mb-1">
-                    Attach Supplementary Evidence (e.g. Certified Shop Inspection)
+                    Supporting document (optional: photo or PDF)
                   </label>
                   <input
                     type="file"
+                    accept="image/jpeg,image/png,image/webp,application/pdf"
                     className="w-full text-xs text-[#45464d]"
-                    onChange={(e) => {
-                      if (e.target.files && e.target.files[0]) {
-                        setAppealEvidenceFile(e.target.files[0].name);
-                      }
-                    }}
+                    onChange={(e) => setAppealEvidenceFile(e.target.files?.[0] ?? null)}
                   />
                 </div>
 
@@ -549,9 +523,10 @@ function ClaimHistoryInner() {
                   </button>
                   <button
                     onClick={handleInitiateAppeal}
-                    className="px-4 py-2 bg-[#ba1a1a] hover:bg-[#93000a] text-white text-xs font-bold rounded-lg shadow-sm"
+                    disabled={appealSubmitting}
+                    className="px-4 py-2 bg-[#ba1a1a] hover:bg-[#93000a] text-white text-xs font-bold rounded-lg shadow-sm disabled:opacity-60"
                   >
-                    Submit Formal Appeal
+                    {appealSubmitting ? "Submitting…" : "Submit Appeal"}
                   </button>
                 </div>
               </div>

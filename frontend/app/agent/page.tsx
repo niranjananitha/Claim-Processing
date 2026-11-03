@@ -6,6 +6,8 @@ import Sidebar from "../components/Sidebar";
 import Header from "../components/Header";
 import { useClaims } from "../context/ClaimsContext";
 import MLRiskAssessment from "../components/MLRiskAssessment";
+import { formatINR } from "../lib/format";
+import { agentCanVerify, blockedReason } from "../lib/workflow";
 
 export default function AgentDashboardPage() {
   const { claims, changeStatus, currentUser } = useClaims();
@@ -24,7 +26,7 @@ export default function AgentDashboardPage() {
 
   // Operational Queues
   const unverified = claims.filter(
-    (c) => c.status === "Action Required" || c.status === "Under Review" || c.status === "In Appraisal"
+    (c) => c.status === "Submitted" || c.status === "Action Required" || c.status === "Under Review"
   );
   const appealsQueue = claims.filter((c) => c.status === "Disputed" || c.status === "Revaluation");
 
@@ -39,7 +41,11 @@ export default function AgentDashboardPage() {
 
   const handleVerify = async (id: string) => {
     const claim = claims.find((c) => c.id === id);
-    if (claim && (claim.status === "Submitted" || claim.status === "Action Required")) {
+    if (!claim || !agentCanVerify(claim.status)) {
+      showToast(`Claim #${id}: ${blockedReason(claim?.status || "")}`);
+      return;
+    }
+    if (claim.status === "Submitted") {
       await changeStatus(id, "Under Review", "Adjuster commenced review.");
     }
     const res = await changeStatus(
@@ -57,7 +63,7 @@ export default function AgentDashboardPage() {
   return (
     <div className="min-h-screen bg-[#f8f9ff] flex">
       <Sidebar />
-      <div className="flex-1 ml-72 flex flex-col min-w-0">
+      <div className="flex-1 app-main flex flex-col min-w-0">
         <Header />
 
         <main className="flex-1 p-6 max-w-7xl w-full mx-auto flex flex-col gap-6">
@@ -73,14 +79,14 @@ export default function AgentDashboardPage() {
                 Agent Triage Dashboard
               </h1>
               <p className="text-xs text-[#45464d] mt-1">
-                Field damage assessments, police documentation validation, and initial statutory triage.
+                Damage assessment, document checks and first review of your assigned claims.
               </p>
             </div>
 
             <div className="flex items-center gap-2">
               <span className="px-3 py-1.5 rounded-lg bg-[#ecfdf5] border border-[#a7f3d0] text-[#065f46] text-xs font-bold flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-[#059669]" />
-                <span>Adjuster Online: {currentUser?.name || "Samantha Vance (ADJ-04)"}</span>
+                <span>Adjuster Online: {currentUser?.name || ""}</span>
               </span>
             </div>
           </div>
@@ -151,7 +157,7 @@ export default function AgentDashboardPage() {
               <span className="text-2xl font-extrabold text-[#0b1c30] mt-1 block">
                 {awaitingAppealCount}
               </span>
-              <span className="text-[10px] text-[#76777d]">7-day window</span>
+              <span className="text-[10px] text-[#76777d]">Rejected, not yet appealed</span>
             </div>
           </div>
 
@@ -199,18 +205,18 @@ export default function AgentDashboardPage() {
                   {filtered.map((claim) => (
                     <tr key={claim.id} className="hover:bg-[#eff4ff]/60 transition-colors">
                       <td className="py-3 px-4 font-bold text-[#0b1c30]">
-                        {claim.id}
+                        {claim.claimRef || claim.id}
                       </td>
                       <td className="py-3 px-4">
                         <span className="font-semibold text-[#0b1c30] block">{claim.policyHolder}</span>
-                        <span className="text-[11px] text-[#45464d]">Policy #{claim.policyNumber}</span>
+                        <span className="text-[11px] text-[#45464d]">{claim.policyNumber ? `Policy ${claim.policyNumber}` : "No policy linked"}</span>
                       </td>
                       <td className="py-3 px-4">{claim.vehicle}</td>
                       <td className="py-3 px-4">
                         <span className="text-xs font-medium">{claim.severity}</span>
                       </td>
                       <td className="py-3 px-4 font-mono font-semibold">
-                        ${claim.damageEstimate.toLocaleString()}
+                        {formatINR(claim.damageEstimate)}
                       </td>
                       <td className="py-3 px-4">
                         <span
@@ -224,12 +230,16 @@ export default function AgentDashboardPage() {
                         </span>
                       </td>
                       <td className="py-3 px-4 text-right space-x-1.5">
+                        {agentCanVerify(claim.status) ? (
                         <button
                           onClick={() => handleVerify(claim.id)}
                           className="px-2.5 py-1 bg-[#059669] hover:bg-[#047857] text-white text-xs font-semibold rounded transition-colors cursor-pointer"
                         >
                           Verify & Authorize
                         </button>
+                        ) : (
+                          <span className="text-[11px] text-[#76777d]">Waiting on customer</span>
+                        )}
                         <Link
                           href="/agent/ongoing"
                           className="px-2.5 py-1 bg-[#eff4ff] hover:bg-[#dce9ff] text-[#0b1c30] text-xs font-semibold rounded border border-[#d3e4fe] transition-colors"
@@ -251,7 +261,7 @@ export default function AgentDashboardPage() {
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-[20px] text-[#d97706]">balance</span>
                   <span className="text-sm font-bold text-[#0b1c30]">
-                    Appeals & Statutory Revaluations Requiring Agent Review
+                    Appeals &amp; Revaluations Requiring Agent Review
                   </span>
                 </div>
                 <span className="text-xs text-[#d97706] font-bold bg-[#fef3c7] px-2.5 py-0.5 rounded border border-[#fde68a]">

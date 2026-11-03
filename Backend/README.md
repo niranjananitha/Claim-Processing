@@ -29,7 +29,7 @@ pip install -r requirements.txt
 cp .env.example .env            # then set DB_PASSWORD and a strong JWT_SECRET
 ```
 
-Create the database (once), run migrations, and seed demo data:
+Create the database (once), run migrations, and create the manager account:
 
 ```bash
 # create the schema's database if it doesn't exist:
@@ -38,7 +38,7 @@ c=pymysql.connect(host=s.db_host,port=s.db_port,user=s.db_user,password=s.db_pas
 c.cursor().execute('CREATE DATABASE IF NOT EXISTS %s CHARACTER SET utf8mb4' % s.db_name); c.commit()"
 
 alembic upgrade head            # create all tables
-python -m app.seed              # seed demo accounts + 15 demo claims
+python -m app.seed              # ensure the permanent manager account (no sample data)
 ```
 
 Run the API:
@@ -50,15 +50,17 @@ uvicorn app.main:app --reload   # http://127.0.0.1:8000
 - Swagger UI: http://127.0.0.1:8000/docs
 - Health check: http://127.0.0.1:8000/api/v1/health
 
-## Demo logins (from `python -m app.seed`)
+## Accounts
 
-| Role    | Email                          | Password (default) |
-|---------|--------------------------------|--------------------|
-| Client  | marcus.vance@aegisclient.com   | `Client#12345`     |
-| Agent   | agent@aegis.com                | `Agent#12345`      |
-| Manager | manager@aegis.com              | `Manager#12345`    |
+There is no sample data. Accounts are created like this:
 
-(Passwords are configurable via `SEED_*_PASSWORD` env vars.)
+| Role | How the account is created |
+|------|----------------------------|
+| Manager | One permanent account, ensured by `python -m app.seed`. Email from `MANAGER_EMAIL` (default `manager@aegis.com`), password from `SEED_MANAGER_PASSWORD` in `Backend/.env`. |
+| Agent | Created by the manager on **Agent Management** (`/manager/agents`), who can also grant/revoke access and assign claims. |
+| Client | Self-registers on `/signup`, adding their vehicle (Two Wheeler / Four Wheeler / Cargo Truck → brand → model, or *Other*). |
+
+Amounts are shown in Indian Rupees (₹, Indian digit grouping) and times in IST.
 
 ## Tests
 

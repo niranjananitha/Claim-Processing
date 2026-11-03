@@ -5,9 +5,13 @@ def _email():
     return f"user_{uuid.uuid4().hex[:10]}@example.com"
 
 
+VEHICLE = {"category": "two_wheeler", "make": "Honda", "model": "Activa 6G",
+           "year": 2023, "registration_number": "KA 05 MX 0001"}
+
+
 def register(client, role_in_body=None):
     email = _email()
-    body = {"name": "Reg User", "email": email, "password": "Passw0rd!"}
+    body = {"name": "Reg User", "email": email, "password": "Passw0rd!", "vehicle": VEHICLE}
     if role_in_body:
         body["role"] = role_in_body
     resp = client.post("/api/v1/auth/register", json=body)
@@ -82,7 +86,8 @@ def test_logout_revokes_refresh(client):
 
 def test_register_rejects_short_password(client):
     resp = client.post("/api/v1/auth/register",
-                       json={"name": "Shorty", "email": _email(), "password": "abc"})
+                       json={"name": "Shorty", "email": _email(), "password": "abc",
+                             "vehicle": VEHICLE})
     assert resp.status_code == 422
 
 

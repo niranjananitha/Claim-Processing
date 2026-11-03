@@ -26,9 +26,11 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:3000"
 
-    seed_client_password: str = "Client#12345"
-    seed_agent_password: str = "Agent#12345"
     seed_manager_password: str = "Manager#12345"
+    # Permanent manager account (created/ensured by `python -m app.seed`).
+    manager_email: str = "manager@aegis.com"
+    manager_name: str = "Catherine Ross"
+    manager_title: str = "Regional Claims Operations Director"
 
     @property
     def database_url(self) -> str:

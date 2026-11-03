@@ -9,6 +9,7 @@ class UserOut(BaseModel):
     email: EmailStr
     role: str
     title: str | None = None
+    is_active: bool = True
 
     # Convenience fields the frontend expects; populated by the route layer.
     policy_number: str | None = None
@@ -25,6 +26,7 @@ def build_user_out(user) -> "UserOut":
         email=user.email,
         role=user.role,
         title=user.title,
+        is_active=bool(getattr(user, "is_active", True)),
         policy_number=policy_number,
         avatar_text=initials,
     )
@@ -47,3 +49,7 @@ class StaffCreate(BaseModel):
         if v not in ("agent", "manager"):
             raise ValueError("role must be 'agent' or 'manager'")
         return v
+
+
+class AccessUpdate(BaseModel):
+    is_active: bool

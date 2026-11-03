@@ -78,43 +78,43 @@ npm run start
 
 ---
 
-## Demo Credentials
+## Accounts
 
-The backend seeds three role accounts with the following default credentials (also available via 1-click login buttons on the `/login` page):
+There is no sample data. Accounts are created like this:
 
-| Role | Email | Password | Primary Portal Route |
-| :--- | :--- | :--- | :--- |
-| **Client (Policyholder)** | `marcus.vance@aegisclient.com` | `Client#12345` | `/` |
-| **Agent (Adjuster)** | `agent@aegis.com` | `Agent#12345` | `/agent` |
-| **Manager (Director)** | `manager@aegis.com` | `Manager#12345` | `/manager` |
+| Role | How the account is created |
+|------|----------------------------|
+| Manager | One permanent account, ensured by `python -m app.seed`. Email from `MANAGER_EMAIL` (default `manager@aegis.com`), password from `SEED_MANAGER_PASSWORD` in `Backend/.env`. |
+| Agent | Created by the manager on **Agent Management** (`/manager/agents`), who can also grant/revoke access and assign claims. |
+| Client | Self-registers on `/signup`, adding their vehicle (Two Wheeler / Four Wheeler / Cargo Truck → brand → model, or *Other*). |
 
-*Note: Public self-registration on `/signup` provisions Client accounts only. Staff accounts (Agent/Manager) are provisioned through administrative staff endpoints.*
+Amounts are shown in Indian Rupees (₹, Indian digit grouping) and times in IST.
 
 ---
 
 ## End-to-End Workflow
 
 1. **Submit Incident (Client)**:
-   - Log in as Client (`marcus.vance@aegisclient.com`).
+   - Sign up as a client on `/signup` (adding your vehicle), or log in.
    - Navigate to **Claim Submission** (`/client/submit`).
-   - Complete the 4-step wizard: Incident Details → Damage Appraisal & Selection → Evidence Upload → Summary & Confirmation.
+   - Complete the 4-step wizard: Vehicle & Policy → Incident Details (IST) → Damage & Evidence (₹ estimate, photos) → Review & Submit.
    - Claim is created with status `Submitted` and assigned a tracking reference (e.g. `CLM-XXXXXX`).
 
 2. **Adjudication & Verification (Agent)**:
-   - Log in as Agent (`agent@aegis.com`).
+   - Log in as an agent created by the manager on Agent Management.
    - Open **Ongoing Claims** (`/agent/ongoing`).
    - Begin review on the submitted claim (`Submitted` transitions to `Under Review`).
    - Inspect vehicle damage, inspect AI Risk Assessment (`/ml/predict`), and click **Verify Claim** (`Under Review` transitions to `Agent-Verified`).
 
 3. **Approval & Settlement (Manager)**:
-   - Log in as Manager (`manager@aegis.com`).
+   - Log in as the manager.
    - Navigate to **Agent-Verified Claims** (`/manager/verified`).
    - Review agent notes and risk tier, then approve settlement with an audit note.
    - Status transitions to `Approved`.
 
 4. **Appeals & Revaluation**:
-   - If a claim is rejected, the policyholder can initiate a statutory appeal in **Claim History** (`/history`), transitioning the claim to `Disputed`.
-   - The appeal appears immediately in the Manager's **Revaluation Management** queue (`/manager/revaluation`) for statutory determination.
+   - If a claim is rejected, the policyholder can appeal the decision in **Claim History** (`/history`), transitioning the claim to `Disputed`.
+   - The appeal appears immediately in the Manager's **Revaluation Management** queue (`/manager/revaluation`) for review.
 
 ---
 
@@ -129,7 +129,7 @@ frontend/
 │   ├── components/            # Reusable enterprise UI (Header, Sidebar, RouteGuard, MLRiskAssessment)
 │   ├── context/               # ClaimsContext (API-backed auth, session state, claims cache)
 │   ├── history/               # Unified searchable claim ledger with CSV export & appeal modal
-│   ├── login/                 # Role-aware login with seeded demo shortcuts
+│   ├── login/                 # Email/password login (no demo shortcuts)
 │   ├── signup/                # Client registration form
 │   ├── services/              # api.ts (in-memory token client, auto-refresh) & types.ts
 │   ├── globals.css            # Enterprise color tokens, typography, and base utility styles

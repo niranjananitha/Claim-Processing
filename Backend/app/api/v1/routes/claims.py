@@ -6,6 +6,7 @@ from app.database.connection import get_db
 from app.dependencies.auth import get_current_user, require_role
 from app.models.user import User
 from app.schemas.claim import ClaimCreate, ClaimOut, StatusChange, StatusHistoryOut
+from app.schemas.document import DocumentOut
 from app.services import claim_service
 
 router = APIRouter(prefix="/claims", tags=["claims"])
@@ -40,3 +41,11 @@ def update_claim_status(claim_id: int, payload: StatusChange,
 def get_history(claim_id: int, user: User = Depends(get_current_user),
                 db: Session = Depends(get_db)):
     return claim_service.claim_history(db, user, claim_id)
+
+
+@router.get("/{claim_id}/documents", response_model=list[DocumentOut])
+def list_documents(claim_id: int, user: User = Depends(get_current_user),
+                   db: Session = Depends(get_db)):
+    """Evidence files attached to a claim (same access rules as the claim itself)."""
+    claim = claim_service.get_claim(db, user, claim_id)
+    return sorted(claim.documents, key=lambda d: d.id)

@@ -24,7 +24,8 @@ def _set_refresh_cookie(response: Response, raw: str) -> None:
 def register(payload: RegisterRequest, response: Response, db: Session = Depends(get_db)):
     try:
         user = auth_service.register_client(
-            db, payload.name, payload.email, payload.password, payload.policy_number
+            db, payload.name, payload.email, payload.password, payload.policy_number,
+            payload.vehicle,
         )
     except auth_service.AuthError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))

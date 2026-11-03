@@ -80,19 +80,23 @@ npm install
 npm run dev                   # http://localhost:3000
 ```
 
-### 3. Demo logins
-| Role | Email | Password |
-|------|-------|----------|
-| Client | marcus.vance@aegisclient.com | `Client#12345` |
-| Agent | agent@aegis.com | `Agent#12345` |
-| Manager | manager@aegis.com | `Manager#12345` |
+### 3. Accounts
+There is no sample data. Accounts are created like this:
+
+| Role | How the account is created |
+|------|----------------------------|
+| Manager | One permanent account, ensured by `python -m app.seed`. Email from `MANAGER_EMAIL` (default `manager@aegis.com`), password from `SEED_MANAGER_PASSWORD` in `Backend/.env`. |
+| Agent | Created by the manager on **Agent Management** (`/manager/agents`), who can also grant/revoke access and assign claims. |
+| Client | Self-registers on `/signup`, adding their vehicle (Two Wheeler / Four Wheeler / Cargo Truck → brand → model, or *Other*). |
+
+Amounts are shown in Indian Rupees (₹, Indian digit grouping) and times in IST.
 
 ---
 
 ## Tests
 
 ```bash
-cd Backend && pytest        # 56 tests: auth, RBAC, claim workflow, uploads, ML, security
+cd Backend && pytest        # auth, RBAC, claim workflow, vehicles, uploads, ML, security
 ```
 The suite runs against an auto-created, empty `claims_database_test` schema and rolls back
 after each test, so it never touches your real database.

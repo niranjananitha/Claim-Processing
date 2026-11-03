@@ -1,14 +1,20 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/Header";
 import { useClaims } from "../../context/ClaimsContext";
 import type { ClaimRecord } from "../../services/types";
 import MLRiskAssessment from "../../components/MLRiskAssessment";
+import EvidenceGallery from "../../components/EvidenceGallery";
+import { ClaimTimeline, IncidentDetails } from "../../components/ClaimFacts";
+import { formatDate, formatDateTimeIST, formatINR } from "../../lib/format";
+import { blockedReason, canTransition } from "../../lib/workflow";
 
 export default function ManagerVerifiedClaimsPage() {
-  const { claims, changeStatus, currentUser } = useClaims();
+  const { claims, changeStatus, currentUser, setSelectedClaim: openInHistory } = useClaims();
+  const [lastDecided, setLastDecided] = useState<ClaimRecord | null>(null);
   const [selectedClaim, setSelectedClaim] = useState<ClaimRecord | null>(null);
   const [decisionModal, setDecisionModal] = useState<"APPROVE" | "REJECT" | "REQUEST_INFO" | "RETURN_REVIEW" | null>(null);
   const [writtenReason, setWrittenReason] = useState("");
@@ -16,18 +22,19 @@ export default function ManagerVerifiedClaimsPage() {
 
   // Claims ready for manager decision
   const awaitingManager = claims.filter(
-    (c) => c.status === "Agent-Verified" || c.status === "Approved" || c.status === "Under Review"
+    (c) => c.status === "Agent-Verified" || c.status === "Fraud Review"
   );
 
   const showToast = (msg: string) => {
     setFeedbackToast(msg);
-    setTimeout(() => setFeedbackToast(null), 5000);
+    setTimeout(() => setFeedbackToast(null), 10000);
   };
 
   const handleExecuteDecision = async () => {
     if (!selectedClaim || !decisionModal) return;
+    setLastDecided(null);
 
-    const timestamp = new Date().toLocaleString();
+    const timestamp = formatDateTimeIST(new Date());
     const reviewerName = currentUser?.name || "Claims Director";
     const ref = selectedClaim.claimRef || selectedClaim.id;
 
@@ -42,9 +49,9 @@ export default function ManagerVerifiedClaimsPage() {
       result = await changeStatus(
         selectedClaim.id,
         "Approved",
-        `Approved by ${reviewerName} at ${timestamp}. Authorized settlement: $${selectedClaim.damageEstimate.toLocaleString()}.`
+        `Approved by ${reviewerName} at ${timestamp}. Authorized settlement: ${formatINR(selectedClaim.damageEstimate)}.`
       );
-      if (result) showToast(`Claim #${ref} approved for $${selectedClaim.damageEstimate.toLocaleString()}.`);
+      if (result) showToast(`Claim #${ref} approved for ${formatINR(selectedClaim.damageEstimate)}.`);
     } else if (decisionModal === "REJECT") {
       result = await changeStatus(
         selectedClaim.id,
@@ -63,10 +70,11 @@ export default function ManagerVerifiedClaimsPage() {
     }
 
     if (!result) {
-      showToast(`Action not permitted on claim #${ref} in its current state.`);
+      showToast(`Claim ${ref}: ${blockedReason(selectedClaim.status)}`);
       return;
     }
 
+    setLastDecided(result);
     setDecisionModal(null);
     setSelectedClaim(null);
     setWrittenReason("");
@@ -75,7 +83,7 @@ export default function ManagerVerifiedClaimsPage() {
   return (
     <div className="min-h-screen bg-[#f8f9ff] flex">
       <Sidebar />
-      <div className="flex-1 ml-72 flex flex-col min-w-0">
+      <div className="flex-1 app-main flex flex-col min-w-0">
         <Header />
 
         <main className="flex-1 p-6 max-w-7xl w-full mx-auto flex flex-col gap-6">
@@ -104,6 +112,15 @@ export default function ManagerVerifiedClaimsPage() {
             <div className="p-3 bg-[#ecfdf5] border border-[#a7f3d0] rounded-xl text-xs font-bold text-[#065f46] flex items-center gap-2 animate-fadeIn shadow-2xs">
               <span className="material-symbols-outlined text-[18px]">verified</span>
               <span>{feedbackToast}</span>
+              {lastDecided && (
+                <Link
+                  href="/history"
+                  onClick={() => openInHistory(lastDecided)}
+                  className="ml-auto px-2.5 py-1 rounded-lg bg-white border border-[#a7f3d0] text-[#065f46] hover:bg-[#d1fae5] whitespace-nowrap"
+                >
+                  View in Claim History →
+                </Link>
+              )}
             </div>
           )}
 
@@ -123,23 +140,32 @@ export default function ManagerVerifiedClaimsPage() {
                   </tr>
                 </thead>
                 <tbody className="text-xs text-[#0b1c30] divide-y divide-[#e5eeff]">
+                  {awaitingManager.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="py-10 px-4 text-center">
+                        <span className="material-symbols-outlined text-[32px] text-[#069669] block">task_alt</span>
+                        <span className="text-sm font-bold text-[#0b1c30] block mt-1">No claims awaiting your decision</span>
+                        <span className="text-xs text-[#45464d]">Claims appear here once an agent verifies them. Decided claims are in Claim History.</span>
+                      </td>
+                    </tr>
+                  )}
                   {awaitingManager.map((claim) => (
                     <tr
                       key={claim.id}
                       className="hover:bg-[#eff4ff]/60 transition-colors cursor-pointer"
                       onClick={() => setSelectedClaim(claim)}
                     >
-                      <td className="py-3 px-4 font-bold text-[#0b1c30]">{claim.id}</td>
+                      <td className="py-3 px-4 font-bold text-[#0b1c30] whitespace-nowrap">{claim.claimRef || claim.id}</td>
                       <td className="py-3 px-4">
                         <span className="font-semibold text-[#0b1c30] block">{claim.policyHolder}</span>
-                        <span className="text-[11px] text-[#45464d]">Policy #{claim.policyNumber}</span>
+                        <span className="text-[11px] text-[#45464d]">{claim.policyNumber ? `Policy ${claim.policyNumber}` : "No policy linked"}</span>
                       </td>
                       <td className="py-3 px-4">{claim.vehicle}</td>
                       <td className="py-3 px-4 font-mono font-bold text-[#0b1c30]">
-                        ${claim.damageEstimate.toLocaleString()}
+                        {formatINR(claim.damageEstimate)}
                       </td>
                       <td className="py-3 px-4 text-xs font-semibold text-[#4059aa]">
-                        {claim.assignedTo}
+                        {claim.assignedAgentName || "Unassigned"}
                       </td>
                       <td className="py-3 px-4">
                         <span
@@ -185,12 +211,12 @@ export default function ManagerVerifiedClaimsPage() {
 
                 <div>
                   <div className="flex items-center gap-2 text-xs text-[#45464d] font-semibold">
-                    <span>Executive File: {selectedClaim.id}</span>
+                    <span>Executive File: {selectedClaim.claimRef || selectedClaim.id}</span>
                     <span>•</span>
-                    <span>Policy #{selectedClaim.policyNumber} ({selectedClaim.policyHolder})</span>
+                    <span>{selectedClaim.policyNumber ? `Policy ${selectedClaim.policyNumber}` : "No policy linked"} ({selectedClaim.policyHolder})</span>
                   </div>
                   <h2 className="text-xl font-bold text-[#0b1c30] mt-0.5">
-                    {selectedClaim.vehicle} — Certified Loss: ${selectedClaim.damageEstimate.toLocaleString()}
+                    {selectedClaim.vehicle} — Certified Loss: {formatINR(selectedClaim.damageEstimate)}
                   </h2>
                 </div>
 
@@ -201,13 +227,20 @@ export default function ManagerVerifiedClaimsPage() {
                   severity={selectedClaim.severity}
                 />
 
+                {/* Client-uploaded photos & documents */}
+                <IncidentDetails claim={selectedClaim} />
+
+                <EvidenceGallery claimId={selectedClaim.id} />
+
+                <ClaimTimeline claimId={selectedClaim.id} />
+
                 {/* Adjuster Findings & Audit Trail */}
                 <div className="p-3.5 bg-[#eff4ff] border border-[#d3e4fe] rounded-xl text-xs space-y-1.5">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-[#1d3989]">
-                      Field Adjuster Recommendation ({selectedClaim.assignedTo}):
+                      Field Adjuster Recommendation ({selectedClaim.assignedAgentName || "Unassigned"}):
                     </span>
-                    <span className="text-[11px] text-[#45464d]">Incident Date: {selectedClaim.incidentDate}</span>
+                    <span className="text-[11px] text-[#45464d]">Incident Date: {formatDate(selectedClaim.incidentDate)}</span>
                   </div>
                   <p className="text-[#45464d]">{selectedClaim.statusNote}</p>
                 </div>
@@ -215,27 +248,34 @@ export default function ManagerVerifiedClaimsPage() {
                 {/* Manager Action Palette */}
                 <div className="pt-3 border-t border-[#e5eeff] flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
+                    {canTransition("manager", selectedClaim.status, "Rejected") && (
                     <button
                       onClick={() => setDecisionModal("REJECT")}
                       className="px-3.5 py-2 bg-white hover:bg-[#ffdad6] text-[#ba1a1a] border border-[#fca5a5] text-xs font-bold rounded-lg transition-colors"
                     >
                       Reject Claim
                     </button>
+                    )}
+                    {canTransition("manager", selectedClaim.status, "Under Review") && (
                     <button
                       onClick={() => setDecisionModal("RETURN_REVIEW")}
                       className="px-3.5 py-2 bg-[#eff4ff] hover:bg-[#dce9ff] text-[#4059aa] border border-[#d3e4fe] text-xs font-bold rounded-lg transition-colors"
                     >
                       Return for Review
                     </button>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2">
+                    {canTransition("manager", selectedClaim.status, "Under Review") && (
                     <button
                       onClick={() => setDecisionModal("REQUEST_INFO")}
                       className="px-3.5 py-2 bg-white hover:bg-[#eff4ff] text-[#0b1c30] border border-[#c6c6cd] text-xs font-bold rounded-lg transition-colors"
                     >
                       Request Info
                     </button>
+                    )}
+                    {canTransition("manager", selectedClaim.status, "Approved") && (
                     <button
                       onClick={() => setDecisionModal("APPROVE")}
                       className="px-5 py-2 bg-[#059669] hover:bg-[#047857] text-white text-xs font-bold rounded-lg shadow-sm transition-colors flex items-center gap-1.5"
@@ -243,6 +283,7 @@ export default function ManagerVerifiedClaimsPage() {
                       <span className="material-symbols-outlined text-[18px]">verified</span>
                       <span>Approve Claim</span>
                     </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -269,7 +310,7 @@ export default function ManagerVerifiedClaimsPage() {
                     {decisionModal === "APPROVE"
                       ? `Confirm Settlement Approval: Claim #${selectedClaim.id}`
                       : decisionModal === "REJECT"
-                      ? `Statutory Rejection: Claim #${selectedClaim.id}`
+                      ? `Reject Claim ${selectedClaim.claimRef || selectedClaim.id}`
                       : `Request Additional Information`}
                   </h3>
                 </div>
@@ -282,7 +323,7 @@ export default function ManagerVerifiedClaimsPage() {
                   <div className="flex justify-between">
                     <span className="text-[#45464d]">Certified Amount:</span>
                     <span className="font-mono font-bold text-[#0b1c30]">
-                      ${selectedClaim.damageEstimate.toLocaleString()}
+                      {formatINR(selectedClaim.damageEstimate)}
                     </span>
                   </div>
                 </div>
@@ -299,7 +340,7 @@ export default function ManagerVerifiedClaimsPage() {
                     </label>
                     <textarea
                       rows={3}
-                      placeholder="Enter legal/statutory rationale for this decision..."
+                      placeholder="Explain the reason for this decision..."
                       value={writtenReason}
                       onChange={(e) => setWrittenReason(e.target.value)}
                       className="w-full p-2.5 bg-[#f8f9ff] border border-[#c6c6cd] rounded-lg text-xs text-[#0b1c30] outline-none focus:border-[#4059aa]"

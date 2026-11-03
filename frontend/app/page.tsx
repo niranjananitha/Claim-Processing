@@ -5,8 +5,10 @@ import Link from "next/link";
 import Sidebar from "./components/Sidebar";
 import Header from "./components/Header";
 import { useClaims } from "./context/ClaimsContext";
-import type { ClaimRecord } from "./services/types";
 import RouteGuard from "./components/RouteGuard";
+import { documentsApi } from "./services/api";
+import { IncidentDetails } from "./components/ClaimFacts";
+import { formatDate, formatINR } from "./lib/format";
 
 export default function ClientDashboardPage() {
   return (
@@ -37,22 +39,27 @@ function ClientDashboardInner() {
     (c) => c.status === "Completed" || c.status === "Approved"
   ).length;
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setUploadMessage(
-        `Successfully uploaded "${e.target.files[0].name}". Queued for Aegis adjuster review.`
-      );
-      setTimeout(() => setUploadMessage(null), 5000);
-    }
+  // Really uploads the photo against the claim that needs it.
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !actionRequiredClaim) return;
+    const res = await documentsApi.upload(actionRequiredClaim.id, file, "image");
+    setUploadMessage(
+      res.ok
+        ? `Uploaded "${file.name}" to claim ${actionRequiredClaim.claimRef || actionRequiredClaim.id}. Your adjuster can now see it.`
+        : `Upload failed: ${res.error || "please try again."}`
+    );
+    setTimeout(() => setUploadMessage(null), 6000);
   };
 
   const displayName = currentUser?.name || "Policyholder";
-  const policyNum = currentUser?.policyNumber || "PA-89214";
+  const policyNum = currentUser?.policyNumber || "";
 
   return (
     <div className="min-h-screen bg-[#f8f9ff] flex">
       <Sidebar />
-      <div className="flex-1 ml-72 flex flex-col min-w-0">
+      <div className="flex-1 app-main flex flex-col min-w-0">
         <Header />
 
         <main className="flex-1 p-6 max-w-7xl w-full mx-auto flex flex-col gap-6">
@@ -62,7 +69,7 @@ function ClientDashboardInner() {
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#069669]" />
                 <span className="text-xs font-bold text-[#45464d] uppercase tracking-wider">
-                  Aegis Auto Coverage • Policy {policyNum}
+                  Aegis Motor Insurance{policyNum ? ` • Policy ${policyNum}` : ""}
                 </span>
               </div>
               <h1 className="text-2xl font-bold text-[#0b1c30] tracking-tight">
@@ -119,7 +126,7 @@ function ClientDashboardInner() {
               <div className="max-w-md">
                 <h3 className="text-lg font-bold text-[#0b1c30]">No Active Claims</h3>
                 <p className="text-sm text-[#45464d] mt-1">
-                  Your policy {policyNum} is in good standing. If you have been involved in an incident, you can file a new claim anytime.
+                  You have no claims yet. If you have been involved in an incident, you can file a claim anytime.
                 </p>
               </div>
               <Link
@@ -219,7 +226,7 @@ function ClientDashboardInner() {
                       <div className="flex flex-col gap-0.5">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="text-sm font-bold text-[#0b1c30]">
-                            Attention Needed: Claim #{actionRequiredClaim.id}
+                            Attention Needed: Claim {actionRequiredClaim.claimRef || actionRequiredClaim.id}
                           </span>
                           <span className="text-[11px] bg-[#eff4ff] px-2 py-0.5 rounded text-[#45464d] font-semibold border border-[#d3e4fe]">
                             {actionRequiredClaim.vehicle}
@@ -239,7 +246,7 @@ function ClientDashboardInner() {
                         <span>Upload Photo</span>
                         <input
                           type="file"
-                          accept="image/*"
+                          accept="image/jpeg,image/png,image/webp"
                           className="hidden"
                           onChange={handleFileUpload}
                         />
@@ -299,7 +306,7 @@ function ClientDashboardInner() {
                           <td className="py-3 px-4">
                             <div className="flex flex-col">
                               <span className="font-bold text-[#0b1c30]">
-                                {claim.id}
+                                {claim.claimRef || claim.id}
                               </span>
                               <span className="text-[11px] text-[#45464d]">
                                 {claim.collisionType || claim.incidentType}
@@ -312,15 +319,15 @@ function ClientDashboardInner() {
                                 {claim.vehicle}
                               </span>
                               <span className="text-[11px] text-[#45464d]">
-                                Policy: {claim.policyNumber}
+                                {claim.policyNumber ? `Policy: ${claim.policyNumber}` : "No policy linked"}
                               </span>
                             </div>
                           </td>
                           <td className="py-3 px-4">
                             <div className="flex flex-col">
-                              <span>{claim.incidentDate}</span>
+                              <span>{formatDate(claim.incidentDate)}</span>
                               <span className="text-[11px] text-[#45464d]">
-                                Filed {claim.filedDate}
+                                Filed {formatDate(claim.filedDate)}
                               </span>
                             </div>
                           </td>
@@ -347,7 +354,7 @@ function ClientDashboardInner() {
                             </span>
                           </td>
                           <td className="py-3 px-4 font-mono font-semibold">
-                            ${claim.damageEstimate.toLocaleString()}
+                            {formatINR(claim.damageEstimate)}
                           </td>
                           <td className="py-3 px-4 text-right">
                             <button
@@ -367,62 +374,6 @@ function ClientDashboardInner() {
                 </div>
               </div>
 
-              {/* Concierge Support & Quick Actions */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="md:col-span-2 bg-white p-5 rounded-xl border border-[#d3e4fe] shadow-xs flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-full bg-[#131b2e] text-white flex items-center justify-center font-bold text-sm shrink-0">
-                      AA
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold text-[#0b1c30]">
-                          Aegis Claims Support
-                        </span>
-                        <span className="text-[10px] bg-[#eff4ff] border border-[#d3e4fe] px-2 py-0.5 rounded font-semibold text-[#4059aa]">
-                          Adjudication Desk
-                        </span>
-                      </div>
-                      <p className="text-xs text-[#45464d] mt-0.5">
-                        Assigned team monitoring your active policy filings. Available Mon-Fri, 8am - 6pm EST.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <a
-                      href="mailto:support@aegisclaims.local"
-                      className="px-3 py-1.5 rounded-lg border border-[#c6c6cd] hover:bg-[#eff4ff] text-xs font-semibold text-[#0b1c30] transition-colors"
-                    >
-                      Email
-                    </a>
-                    <a
-                      href="tel:18005550199"
-                      className="px-3 py-1.5 rounded-lg bg-[#000000] text-white text-xs font-semibold hover:bg-[#131b2e] transition-colors"
-                    >
-                      Call Desk
-                    </a>
-                  </div>
-                </div>
-
-                <div className="bg-[#eff4ff] p-5 rounded-xl border border-[#d3e4fe] shadow-xs flex flex-col justify-between">
-                  <div>
-                    <span className="text-xs font-bold text-[#1d3989] block">
-                      Emergency Roadside Assistance
-                    </span>
-                    <p className="text-[11px] text-[#45464d] mt-1">
-                      24/7 complimentary towing, battery jump-start, and rental car coordinate.
-                    </p>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between">
-                    <span className="text-sm font-bold text-[#0b1c30]">
-                      1-800-AEGIS-SOS
-                    </span>
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-[#069669] text-white font-bold">
-                      24/7 Live
-                    </span>
-                  </div>
-                </div>
-              </div>
             </>
           )}
 
@@ -439,11 +390,11 @@ function ClientDashboardInner() {
 
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-xs font-bold text-[#4059aa]">
-                    {selectedClaim.id}
+                    {selectedClaim.claimRef || selectedClaim.id}
                   </span>
                   <span>•</span>
                   <span className="text-xs text-[#45464d]">
-                    Policy #{selectedClaim.policyNumber}
+                    {selectedClaim.policyNumber ? `Policy ${selectedClaim.policyNumber}` : "No policy linked"}
                   </span>
                 </div>
 
@@ -457,10 +408,14 @@ function ClientDashboardInner() {
                       Current Status: {selectedClaim.status}
                     </span>
                     <span className="text-[11px] text-[#45464d]">
-                      Incident Date: {selectedClaim.incidentDate}
+                      Incident Date: {formatDate(selectedClaim.incidentDate)}
                     </span>
                   </div>
                   <p className="text-xs text-[#45464d]">{selectedClaim.statusNote}</p>
+                </div>
+
+                <div className="mt-4">
+                  <IncidentDetails claim={selectedClaim} />
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 my-4">
@@ -469,7 +424,7 @@ function ClientDashboardInner() {
                       Total Estimate
                     </span>
                     <span className="text-sm font-bold text-[#0b1c30]">
-                      ${selectedClaim.damageEstimate.toLocaleString()}
+                      {formatINR(selectedClaim.damageEstimate)}
                     </span>
                   </div>
                   <div className="p-2.5 rounded bg-[#f8f9ff] border border-[#e5eeff]">
@@ -477,7 +432,7 @@ function ClientDashboardInner() {
                       Vehicle Damage
                     </span>
                     <span className="text-sm font-bold text-[#0b1c30]">
-                      ${selectedClaim.vehicleClaim.toLocaleString()}
+                      {formatINR(selectedClaim.vehicleClaim)}
                     </span>
                   </div>
                   <div className="p-2.5 rounded bg-[#f8f9ff] border border-[#e5eeff]">
@@ -485,7 +440,7 @@ function ClientDashboardInner() {
                       Property Claim
                     </span>
                     <span className="text-sm font-bold text-[#0b1c30]">
-                      ${selectedClaim.propertyClaim.toLocaleString()}
+                      {formatINR(selectedClaim.propertyClaim)}
                     </span>
                   </div>
                   <div className="p-2.5 rounded bg-[#f8f9ff] border border-[#e5eeff]">
@@ -493,7 +448,7 @@ function ClientDashboardInner() {
                       Assigned Adjuster
                     </span>
                     <span className="text-sm font-bold text-[#4059aa]">
-                      {selectedClaim.assignedTo}
+                      {selectedClaim.assignedAgentName || "Unassigned"}
                     </span>
                   </div>
                 </div>

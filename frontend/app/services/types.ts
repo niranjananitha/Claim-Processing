@@ -10,6 +10,17 @@ export interface UserDTO {
   title?: string | null;
   policy_number?: string | null;
   avatar_text?: string | null;
+  is_active?: boolean;
+}
+
+export interface DocumentDTO {
+  id: number;
+  claim_id: number;
+  uploader_id: number;
+  original_name: string;
+  mime_type: string;
+  size_bytes: number;
+  kind: "image" | "document";
 }
 
 export interface UserSession {
@@ -43,6 +54,13 @@ export interface ClaimRecord {
   status: string;
   statusNote: string;
   assignedTo: string;
+  assignedAgentName: string;
+  incidentTime: string;
+  vehicleCategory: string;
+  incidentLocation: string;
+  incidentDescription: string;
+  damagedAreas: string;
+  policeReportNumber: string;
   policeReport: boolean;
   authoritiesContacted: string;
   witnesses: number;
@@ -54,11 +72,17 @@ export interface ClaimDTO {
   id: number;
   claim_ref: string;
   policy_id: number | null;
+  policy_number?: string | null;
   client_id: number;
   assigned_agent_id: number | null;
+  assigned_agent_name?: string | null;
   policy_holder: string;
   incident_date: string | null;
+  incident_time?: string | null;
   filed_date: string;
+  created_at?: string | null;
+  vehicle_id?: number | null;
+  vehicle_category?: string;
   incident_type: string;
   collision_type: string;
   severity: string;
@@ -72,6 +96,10 @@ export interface ClaimDTO {
   property_claim: number;
   status: string;
   status_note: string;
+  incident_location?: string;
+  incident_description?: string;
+  damaged_areas?: string;
+  police_report_number?: string;
   police_report: boolean;
   authorities_contacted: string;
   witnesses: number;
@@ -112,4 +140,35 @@ export interface ApiResult<T> {
   status: number;
   data?: T;
   error?: string;
+}
+
+export type VehicleCategory = "two_wheeler" | "four_wheeler" | "cargo_truck";
+
+export interface VehicleInput {
+  category: VehicleCategory;
+  make: string;
+  model: string;
+  year: number;
+  registration_number: string;
+}
+
+export interface VehicleDTO extends VehicleInput {
+  id: number;
+  is_custom: boolean;
+  label: string;
+}
+
+export interface VehicleCatalog {
+  categories: { key: VehicleCategory; label: string }[];
+  brands: Record<VehicleCategory, Record<string, string[]>>;
+  other_label: string;
+}
+
+export interface PolicyDTO {
+  id: number;
+  policy_number: string;
+  coverage: string;
+  deductible: number;
+  annual_premium: number;
+  status: string;
 }

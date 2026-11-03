@@ -4,6 +4,7 @@ import React from "react";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/Header";
 import { useClaims } from "../../context/ClaimsContext";
+import { formatINR } from "../../lib/format";
 
 export default function AgentVerifiedClaimsPage() {
   const { claims } = useClaims();
@@ -14,7 +15,7 @@ export default function AgentVerifiedClaimsPage() {
   return (
     <div className="min-h-screen bg-[#f8f9ff] flex">
       <Sidebar />
-      <div className="flex-1 ml-72 flex flex-col min-w-0">
+      <div className="flex-1 app-main flex flex-col min-w-0">
         <Header />
 
         <main className="flex-1 p-6 max-w-7xl w-full mx-auto flex flex-col gap-6">
@@ -60,14 +61,14 @@ export default function AgentVerifiedClaimsPage() {
                       <td className="py-3 px-4 font-bold text-[#0b1c30]">{claim.id}</td>
                       <td className="py-3 px-4">
                         <span className="font-semibold text-[#0b1c30] block">{claim.policyHolder}</span>
-                        <span className="text-[11px] text-[#45464d]">Policy #{claim.policyNumber}</span>
+                        <span className="text-[11px] text-[#45464d]">{claim.policyNumber ? `Policy ${claim.policyNumber}` : "No policy linked"}</span>
                       </td>
                       <td className="py-3 px-4">{claim.vehicle}</td>
                       <td className="py-3 px-4 font-mono font-bold text-[#069669]">
-                        ${claim.damageEstimate.toLocaleString()}
+                        {formatINR(claim.damageEstimate)}
                       </td>
                       <td className="py-3 px-4 text-xs font-semibold text-[#4059aa]">
-                        {claim.assignedTo} (Certified)
+                        {claim.assignedAgentName || "Unassigned"} (Certified)
                       </td>
                       <td className="py-3 px-4 max-w-xs truncate text-[#45464d]">
                         {claim.statusNote}

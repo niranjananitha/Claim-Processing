@@ -1,15 +1,24 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useClaims } from "../context/ClaimsContext";
+
+// Survives page navigation (each page mounts its own Sidebar).
+let rememberedCollapsed = false;
 
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { role, currentUser, logout } = useClaims();
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => rememberedCollapsed);
+
+  // Keep the main content offset in sync with the sidebar width.
+  useEffect(() => {
+    rememberedCollapsed = collapsed;
+    document.documentElement.style.setProperty("--sidebar-w", collapsed ? "5rem" : "18rem");
+  }, [collapsed]);
 
   const navItems = {
     client: [
@@ -29,6 +38,7 @@ export default function Sidebar() {
       { name: "Claim History Management", href: "/history", icon: "history" },
       { name: "Revaluation Management", href: "/manager/revaluation", icon: "balance" },
       { name: "Agent-Verified Claims", href: "/manager/verified", icon: "verified" },
+      { name: "Agent Management", href: "/manager/agents", icon: "manage_accounts" },
     ],
   }[role] || [];
 
@@ -45,13 +55,17 @@ export default function Sidebar() {
 
   return (
     <aside
-      className={`fixed left-0 top-0 h-full bg-[#eff4ff] border-r border-[#d3e4fe] z-50 flex flex-col justify-between shadow-sm transition-all duration-300 ease-in-out ${
+      className={`fixed left-0 top-0 h-full bg-[#eff4ff] border-r border-[#d3e4fe] z-50 flex flex-col justify-between shadow-sm overflow-hidden transition-all duration-300 ease-in-out ${
         collapsed ? "w-20" : "w-72"
       }`}
     >
       <div className="flex flex-col">
         {/* Brand & Collapse Header */}
-        <div className="h-16 px-4 flex items-center justify-between bg-[#e5eeff] shrink-0 border-b border-[#d3e4fe]">
+        <div
+          className={`h-16 flex items-center bg-[#e5eeff] shrink-0 border-b border-[#d3e4fe] ${
+            collapsed ? "px-2 justify-center gap-1" : "px-4 justify-between"
+          }`}
+        >
           <Link
             href={role === "agent" ? "/agent" : role === "manager" ? "/manager" : "/"}
             className="flex items-center gap-2.5 overflow-hidden whitespace-nowrap"
@@ -116,6 +130,8 @@ export default function Sidebar() {
                 key={item.href}
                 href={item.href}
                 className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                  collapsed ? "justify-center" : ""
+                } ${
                   isActive ? "bg-[#131b2e] text-white shadow-xs" : "text-[#0b1c30] hover:bg-[#dce9ff]"
                 }`}
                 title={item.name}
@@ -130,8 +146,12 @@ export default function Sidebar() {
 
       {/* Footer Profile & Sign Out */}
       <div className="p-3 border-t border-[#d3e4fe] bg-[#e5eeff] flex flex-col gap-2">
-        <div className="flex items-center justify-between p-2 rounded-lg bg-white border border-[#d3e4fe]">
-          <div className="flex items-center gap-2.5 overflow-hidden">
+        <div
+          className={`flex items-center p-2 rounded-lg bg-white border border-[#d3e4fe] ${
+            collapsed ? "flex-col gap-2" : "justify-between"
+          }`}
+        >
+          <div className="flex items-center gap-2.5 overflow-hidden" title={currentUser?.name}>
             <div className="w-7 h-7 rounded-full bg-[#4059aa] text-white flex items-center justify-center font-bold text-xs shrink-0">
               {currentUser?.avatarText || "US"}
             </div>
@@ -147,15 +167,13 @@ export default function Sidebar() {
             )}
           </div>
 
-          {!collapsed && (
-            <button
-              onClick={handleLogout}
-              className="p-1 rounded text-[#76777d] hover:text-[#ba1a1a] hover:bg-[#ffdad6]/40 transition-colors cursor-pointer"
-              title="Sign Out"
-            >
-              <span className="material-symbols-outlined text-[18px]">logout</span>
-            </button>
-          )}
+          <button
+            onClick={handleLogout}
+            className="p-1 rounded text-[#76777d] hover:text-[#ba1a1a] hover:bg-[#ffdad6]/40 transition-colors cursor-pointer"
+            title="Sign Out"
+          >
+            <span className="material-symbols-outlined text-[18px]">logout</span>
+          </button>
         </div>
       </div>
     </aside>

@@ -10,6 +10,10 @@ class ReasonBody(BaseModel):
     reason: str = Field(min_length=1)
 
 
+class AssignBody(BaseModel):
+    agent_id: int
+
+
 class DecisionBody(BaseModel):
     reason: str = Field(min_length=1)
     approved_amount: float | None = None

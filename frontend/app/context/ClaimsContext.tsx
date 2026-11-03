@@ -9,7 +9,7 @@ import {
   toUserSession,
   type ClaimCreateInput,
 } from "../services/api";
-import type { ClaimRecord, UserRole, UserSession } from "../services/types";
+import type { ClaimRecord, UserRole, UserSession, VehicleInput } from "../services/types";
 
 export type { ClaimRecord, UserRole, UserSession } from "../services/types";
 
@@ -24,6 +24,7 @@ interface ClaimsContextType {
     name: string,
     email: string,
     password: string,
+    vehicle: VehicleInput,
     policyNumber?: string
   ) => Promise<UserSession | null>;
   logout: () => Promise<void>;
@@ -72,6 +73,23 @@ export function ClaimsProvider({ children }: { children: React.ReactNode }) {
     refreshSession();
   }, [refreshSession]);
 
+  // Keep every role's view current: another user (agent/manager/client) may have changed a
+  // claim. Re-fetch when the tab regains focus and every 15s while it is visible.
+  useEffect(() => {
+    if (!currentUser) return;
+    const refresh = () => {
+      if (document.visibilityState === "visible") void loadClaims();
+    };
+    const timer = window.setInterval(refresh, 15000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [currentUser, loadClaims]);
+
   const login = useCallback(
     async (email: string, password: string) => {
       setAuthError(null);
@@ -90,9 +108,15 @@ export function ClaimsProvider({ children }: { children: React.ReactNode }) {
   );
 
   const register = useCallback(
-    async (name: string, email: string, password: string, policyNumber?: string) => {
+    async (
+      name: string,
+      email: string,
+      password: string,
+      vehicle: VehicleInput,
+      policyNumber?: string
+    ) => {
       setAuthError(null);
-      const res = await authApi.register(name, email, password, policyNumber);
+      const res = await authApi.register(name, email, password, vehicle, policyNumber);
       if (res.ok && res.data) {
         setAccessToken(res.data.access_token);
         const user = toUserSession(res.data.user);

@@ -141,3 +141,30 @@ th {
   background: #cbd5e1;
   border-radius: 3px;
 }
+
+/* Main content offset follows the sidebar width (set by Sidebar.tsx). */
+:root {
+  --sidebar-w: 18rem;
+}
+.app-main {
+  margin-left: var(--sidebar-w);
+  transition: margin-left 300ms ease-in-out;
+}
+
+/* ML SHAP bars grow out from the zero line. */
+@keyframes shap-grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+.shap-bar {
+  animation: shap-grow 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .shap-bar {
+    animation: none;
+  }
+}

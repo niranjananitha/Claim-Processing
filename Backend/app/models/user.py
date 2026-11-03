@@ -24,6 +24,7 @@ class User(Base):
     )
 
     policies = relationship("Policy", back_populates="holder", cascade="all, delete-orphan")
+    vehicles = relationship("Vehicle", back_populates="owner", cascade="all, delete-orphan")
     claims = relationship(
         "Claim", back_populates="client", foreign_keys="Claim.client_id"
     )

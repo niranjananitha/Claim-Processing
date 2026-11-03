@@ -6,6 +6,7 @@ import Sidebar from "../../components/Sidebar";
 import Header from "../../components/Header";
 import { useClaims } from "../../context/ClaimsContext";
 import RouteGuard from "../../components/RouteGuard";
+import { formatDate, formatINR } from "../../lib/format";
 
 export default function OngoingClaimsPage() {
   return (
@@ -33,7 +34,7 @@ function OngoingClaimsInner() {
   return (
     <div className="min-h-screen bg-[#f8f9ff] flex">
       <Sidebar />
-      <div className="flex-1 ml-72 flex flex-col min-w-0">
+      <div className="flex-1 app-main flex flex-col min-w-0">
         <Header />
 
         <main className="flex-1 p-6 max-w-7xl w-full mx-auto flex flex-col gap-6">
@@ -175,7 +176,7 @@ function OngoingClaimsInner() {
                             <span className="text-xs text-[#45464d]">({claim.vehicle})</span>
                           </div>
                           <span className="text-[11px] text-[#45464d]">
-                            Incident on {claim.incidentDate || claim.filedDate} • Policy #{claim.policyNumber}
+                            Incident on {formatDate(claim.incidentDate || claim.filedDate)} • {claim.policyNumber ? `Policy ${claim.policyNumber}` : "No policy linked"}
                           </span>
                         </div>
                       </div>
@@ -193,7 +194,7 @@ function OngoingClaimsInner() {
                           {claim.status}
                         </span>
                         <span className="text-sm font-mono font-bold text-[#0b1c30]">
-                          ${claim.damageEstimate.toLocaleString()} est.
+                          {formatINR(claim.damageEstimate)} est.
                         </span>
                       </div>
                     </div>
@@ -236,7 +237,7 @@ function OngoingClaimsInner() {
                     <div className="p-3.5 bg-[#eff4ff] border border-[#d3e4fe] rounded-lg flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
                       <div>
                         <span className="font-bold text-[#1d3989] block">
-                          Assigned Adjuster ({claim.assignedTo || "Adjudication Team"}):
+                          Assigned Adjuster ({claim.assignedAgentName || "Not yet assigned"}):
                         </span>
                         <p className="text-[#45464d] mt-0.5">
                           {claim.statusNote || "Claim is progressing through technical and photo appraisal review."}

@@ -7,6 +7,7 @@ from app.models.ml_prediction import MLPrediction
 from app.models.policy import Policy
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
+from app.models.vehicle import Vehicle
 
 __all__ = [
     "User",
@@ -17,4 +18,5 @@ __all__ = [
     "AuditLog",
     "MLPrediction",
     "RefreshToken",
+    "Vehicle",
 ]
