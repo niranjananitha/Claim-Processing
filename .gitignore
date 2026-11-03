@@ -1,0 +1,30 @@
+# ---- Secrets (never commit) ----
+**/.env
+**/.env.local
+**/.env.*.local
+
+# ---- Python (Backend) ----
+**/__pycache__/
+*.pyc
+**/.pytest_cache/
+**/.venv/
+**/venv/
+Backend/uploads/claim_images/*
+Backend/uploads/documents/*
+!Backend/uploads/claim_images/.gitkeep
+!Backend/uploads/documents/.gitkeep
+
+# ---- Node / Next (frontend) ----
+**/node_modules/
+frontend/.next/
+frontend/out/
+
+# ---- Superpowers scratch + logs + E2E artifacts ----
+**/.superpowers/
+*.log
+**/.playwright-mcp/
+*.png
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db

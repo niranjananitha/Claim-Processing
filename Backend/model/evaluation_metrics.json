@@ -1,0 +1,17 @@
+{
+  "review_threshold": 0.32083502411842346,
+  "test_roc_auc": 0.7562784022961014,
+  "test_average_precision": 0.4989707504711738,
+  "confusion_matrix_labels_0_1": [
+    [
+      86,
+      27
+    ],
+    [
+      16,
+      21
+    ]
+  ],
+  "test_fraud_label_count": 37,
+  "test_nonfraud_label_count": 113
+}

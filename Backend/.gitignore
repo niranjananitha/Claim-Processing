@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.superpowers/
+*.log
+
+# Uploaded files (keep the folder structure only)
+uploads/claim_images/*
+uploads/documents/*
+!uploads/claim_images/.gitkeep
+!uploads/documents/.gitkeep
