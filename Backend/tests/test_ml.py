@@ -46,7 +46,45 @@ def test_predict_offline_when_model_missing(client, make_user, monkeypatch):
     assert resp.json()["model_status"] == "OFFLINE"
 
 
-def test_image_classify_handles_unloadable_model_gracefully():
-    # The shipped .keras file cannot be deserialized in this environment; must degrade.
-    result = ml_service.classify_damage("model/vehicle_damage_classifier.keras")
+def _make_image(tmp_path, color=(200, 30, 30)):
+    from PIL import Image
+
+    path = tmp_path / "car.jpg"
+    Image.new("RGB", (320, 240), color).save(path)
+    return str(path)
+
+
+def test_image_classify_loads_shipped_mobilenet_model(tmp_path):
+    result = ml_service.classify_damage(_make_image(tmp_path))
+    assert result["model_status"] == "AVAILABLE", result
+    assert result["label"] in ("damaged", "whole")
+    assert 0.5 <= result["confidence"] <= 1.0
+    assert 0.0 <= result["damage_probability"] <= 1.0
+
+
+def test_image_classify_feeds_raw_pixels_because_model_rescales_internally(tmp_path, monkeypatch):
+    # The saved model contains MobileNetV2's x/127.5 - 1 step; inputs must stay 0-255.
+    seen = {}
+
+    class StubModel:
+        input_shape = (None, 224, 224, 3)
+
+        def predict(self, arr, verbose=0):
+            seen["max"] = float(arr.max())
+            return [[0.9]]
+
+    monkeypatch.setattr(ml_service, "_damage_model", lambda: StubModel())
+    ml_service.classify_damage(_make_image(tmp_path, color=(255, 255, 255)))
+    assert seen["max"] == 255.0
+
+
+def test_image_classify_degrades_when_model_unavailable(tmp_path, monkeypatch):
+    monkeypatch.setattr(ml_service, "_damage_model", lambda: None)
+    result = ml_service.classify_damage(_make_image(tmp_path))
     assert result["model_status"] == "OFFLINE"
+
+
+def test_image_classify_degrades_on_unreadable_image(tmp_path):
+    bad = tmp_path / "not_an_image.jpg"
+    bad.write_text("nope")
+    assert ml_service.classify_damage(str(bad))["model_status"] == "OFFLINE"

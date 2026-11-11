@@ -3,13 +3,13 @@
 Two independent models, never combined into a single verdict:
   * XGBoost tabular fraud-risk (primary). Missing claim features are imputed by the
     shipped preprocessing pipeline; we report which features were imputed.
-  * MobileNetV2 vehicle-damage image classifier. The shipped .keras file cannot be
-    deserialized in this keras 3.x / tf 2.x environment (empty Functional config), so
-    it degrades to model_status=OFFLINE. The fraud model is never blocked by this.
+  * MobileNetV2 vehicle-damage image classifier (keras 3.13). Degrades to
+    model_status=OFFLINE if it cannot load; the fraud model is never blocked by this.
 
 ML output is advisory only; nothing here changes a claim's status.
 """
 import json
+import logging
 
 import numpy as np
 import pandas as pd
@@ -17,6 +17,8 @@ import pandas as pd
 from app.core.config import get_settings
 from app.models.claim import Claim
 from app.models.ml_prediction import MLPrediction
+
+logger = logging.getLogger(__name__)
 
 _FRAUD_VERSION = "xgboost-fraud-v1"
 _cache: dict = {}
@@ -177,29 +179,59 @@ def _persist(db, claim_id: int, result: dict) -> None:
 
 
 # ----------------------------------------------------------------------------- image
-def classify_damage(image_path: str) -> dict:
-    """Classify a vehicle image. Degrades to OFFLINE when the model cannot load."""
+# What the sigmoid output (class index 1) means. image_dataset_from_directory assigns
+# class indices alphabetically by folder name, so this must match the training folders
+# (e.g. "00-damage"/"01-whole" -> index 1 is "whole").
+_SIGMOID_POSITIVE_LABEL = "damaged"
+
+
+def _damage_model():
+    """Load the MobileNetV2 classifier once. Returns None if it cannot be loaded.
+
+    Requires the keras version the model was saved with (see requirements.txt): older
+    keras rejects the `quantization_config` field that 3.13 writes into Dense layers.
+    """
+    if "damage" in _cache:
+        return _cache["damage"]
+    model = None
     try:
         import keras
 
         model = keras.models.load_model(
-            str(get_settings().model_dir / "vehicle_damage_classifier.keras"),
-            compile=False, safe_mode=False,
+            str(get_settings().model_dir / "vehicle_damage_classifier.keras"), compile=False,
         )
-        # (Unreachable in this environment — the .keras file cannot be deserialized.)
-        import numpy as _np
+    except Exception:
+        logger.exception("Vehicle damage classifier could not be loaded")
+    _cache["damage"] = model
+    return model
+
+
+def _offline_image(detail: str) -> dict:
+    return {"model_status": "OFFLINE", "label": None, "confidence": None,
+            "damage_probability": None, "detail": detail}
+
+
+def classify_damage(image_path: str) -> dict:
+    """Classify a vehicle image as damaged/whole. Advisory only; degrades to OFFLINE."""
+    model = _damage_model()
+    if model is None:
+        return _offline_image("Image classifier unavailable (model could not be loaded).")
+    try:
         from keras.utils import img_to_array, load_img
 
-        img = load_img(image_path, target_size=model.input_shape[1:3])
-        arr = _np.expand_dims(img_to_array(img) / 255.0, 0)
-        pred = float(model.predict(arr, verbose=0)[0][0])
-        label = "damaged" if pred >= 0.5 else "whole"
-        return {"model_status": "AVAILABLE", "label": label,
-                "confidence": pred if label == "damaged" else 1 - pred}
+        img = load_img(image_path, target_size=model.input_shape[1:3], color_mode="rgb")
+        # Raw 0-255 pixels: the model applies MobileNetV2's x/127.5 - 1 internally.
+        arr = np.expand_dims(img_to_array(img), 0)
+        p_positive = float(model.predict(arr, verbose=0)[0][0])
     except Exception:
-        return {
-            "model_status": "OFFLINE",
-            "label": None,
-            "confidence": None,
-            "detail": "Image classifier unavailable (model could not be loaded).",
-        }
+        logger.exception("Vehicle damage classification failed for %s", image_path)
+        return _offline_image("Image could not be classified.")
+
+    p_damaged = p_positive if _SIGMOID_POSITIVE_LABEL == "damaged" else 1.0 - p_positive
+    label = "damaged" if p_damaged >= 0.5 else "whole"
+    return {
+        "model_status": "AVAILABLE",
+        "label": label,
+        "confidence": round(max(p_damaged, 1.0 - p_damaged), 4),
+        "damage_probability": round(p_damaged, 4),
+    }

@@ -16,6 +16,10 @@ xgboost
 scikit-learn
 joblib
 tensorflow
+# Must match the version vehicle_damage_classifier.keras was saved with (3.13.2);
+# keras <=3.12 cannot deserialize it.
+keras>=3.13.2,<3.14
+pillow
 shap
 # Tests
 pytest
